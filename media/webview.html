@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html style="height: 100%;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Log Viewer</title>
+</head>
+
+<body style="height: 100%; margin: 0; display: flex; flex-direction: column; font-family: sans-serif;">
+
+    <div style="padding: 6px; background: #2d2d2d; display: flex; align-items: center;">
+        <input id="search" type="text" placeholder="Search logs..." style="flex: 1; padding: 6px;" />
+        <label style="color: white; margin-left: 12px; font-size: 12px;">
+            <input type="checkbox" id="regex" /> 正则
+        </label>
+        <label style="color: white; margin-left: 8px; font-size: 12px;">
+            <input type="checkbox" id="caseSensitive" /> 区分大小写
+        </label>
+        <button id="clearLogBtn" style="margin-left: 12px; padding: 4px 8px;">清除日志</button>
+        <div id="status" style="color: white; margin-left: 8px; white-space: nowrap;"></div>
+    </div>
+
+    <pre id="log"
+        style="flex: 1; background: #1e1e1e; color: white; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap;"></pre>
+
+    <div id="matches"
+        style="max-height: 150px; overflow-y: auto; background: #111; color: #ccc; font-size: 13px; border-top: 1px solid #333; padding: 6px;">
+    </div>
+
+    <script>
+        // Webview 主逻辑
+        class LogViewer {
+            constructor() {
+                this.vscode = acquireVsCodeApi();
+                this.currentLogLines = [];
+                this.matchPositions = [];
+                this.currentMatchIndex = -1;
+                this.searchHistory = [];
+                this.historyIndex = -1;
+                this.searchTimeout = null;
+                
+                this.initElements();
+                this.initEventListeners();
+                this.restoreState();
+                this.requestInitialState();
+            }
+
+            initElements() {
+                this.log = document.getElementById('log');
+                this.search = document.getElementById('search');
+                this.status = document.getElementById('status');
+                this.matchesDiv = document.getElementById('matches');
+                this.regexToggle = document.getElementById('regex');
+                this.caseToggle = document.getElementById('caseSensitive');
+                this.clearLogBtn = document.getElementById('clearLogBtn');
+            }
+
+            initEventListeners() {
+                // 消息监听
+                window.addEventListener('message', this.handleMessage.bind(this));
+                
+                // 清除日志按钮
+                this.clearLogBtn.addEventListener('click', this.clearLog.bind(this));
+                
+                // 搜索相关事件
+                this.search.addEventListener('keydown', this.handleSearchKeydown.bind(this));
+                this.regexToggle.addEventListener('change', this.sendSearchRequest.bind(this));
+                this.caseToggle.addEventListener('change', this.sendSearchRequest.bind(this));
+                
+                // 搜索框输入监听
+                this.search.addEventListener('input', this.handleSearchInput.bind(this));
+                
+                // 定期保存状态
+                setInterval(() => this.persistState(), 1000);
+            }
+
+            handleMessage(event) {
+                const { type, lines, history, payload, targetLineIndex } = event.data;
+                
+                switch (type) {
+                    case 'history':
+                        this.handleHistory(history);
+                        break;
+                    case 'restorePanelState':
+                        this.handleRestorePanelState(payload);
+                        break;
+                    case 'log':
+                        this.handleLog(lines, targetLineIndex);
+                        break;
+                    case 'searchResult':
+                        this.handleSearchResult(payload);
+                        break;
+                }
+            }
+
+            handleHistory(history) {
+                this.searchHistory = [...history];
+                this.historyIndex = this.searchHistory.length;
+            }
+
+            handleRestorePanelState(payload) {
+                if (payload.searchText) {
+                    this.search.value = payload.searchText;
+                    this.currentMatchIndex = payload.matchIndex || -1;
+                    setTimeout(() => this.applySearch(this.search.value), 50);
+                }
+                if (payload.scrollTop !== undefined) {
+                    setTimeout(() => { this.log.scrollTop = payload.scrollTop; }, 100);
+                }
+            }
+
+            handleLog(lines, targetLineIndex) {
+                this.currentLogLines = lines || [];
+
+                if (!this.search.value.trim()) {
+                    this.renderLogLines();
+                    this.log.scrollTop = this.log.scrollHeight;
+                } else {
+                    setTimeout(() => {
+                        if (targetLineIndex !== undefined) {
+                            this.highlightTargetLine(targetLineIndex);
+                        } else {
+                            this.highlightLogContent(this.search.value.trim());
+                        }
+                    }, 10);
+                }
+            }
+
+            handleSearchResult(payload) {
+                setTimeout(() => {
+                    this.matchPositions = payload;
+                    this.applySearch(this.search.value.trim());
+                }, 0);
+            }
+
+            handleSearchKeydown(e) {
+                if (e.key === 'Enter') {
+                    this.clearSearchHighlights();
+                    const query = this.search.value.trim();
+                    this.sendSearchRequest();
+                    
+                    if (!query) return;
+                    
+                    this.updateSearchHistory(query);
+                } else if (e.key === 'ArrowUp') {
+                    this.navigateHistory(-1);
+                } else if (e.key === 'ArrowDown') {
+                    this.navigateHistory(1);
+                }
+            }
+
+            handleSearchInput() {
+                if (this.searchTimeout) {
+                    clearTimeout(this.searchTimeout);
+                }
+                this.searchTimeout = setTimeout(() => {
+                    this.sendSearchRequest();
+                }, 300);
+            }
+
+            navigateHistory(direction) {
+                if (this.searchHistory.length === 0) return;
+                
+                if (direction === -1) {
+                    this.historyIndex = Math.max(0, this.historyIndex - 1);
+                    this.search.value = this.searchHistory[this.historyIndex];
+                } else {
+                    this.historyIndex = Math.min(this.searchHistory.length, this.historyIndex + 1);
+                    if (this.historyIndex === this.searchHistory.length) {
+                        this.search.value = '';
+                    } else {
+                        this.search.value = this.searchHistory[this.historyIndex];
+                    }
+                }
+            }
+
+            updateSearchHistory(query) {
+                if (!this.searchHistory.includes(query)) {
+                    this.searchHistory.push(query);
+                    if (this.searchHistory.length > 100) {
+                        this.searchHistory = this.searchHistory.slice(-100);
+                    }
+                } else {
+                    this.searchHistory.splice(this.searchHistory.indexOf(query), 1);
+                    this.searchHistory.push(query);
+                }
+                this.vscode.postMessage({ type: 'updateHistory', payload: this.searchHistory });
+                this.historyIndex = this.searchHistory.length;
+            }
+
+            applySearch(query) {
+                if (!query) {
+                    this.clearSearchHighlights();
+                    this.renderLogLines();
+                    this.log.scrollTop = this.log.scrollHeight;
+                    return;
+                }
+
+                const currentMatchPositions = [...this.matchPositions];
+
+                if (currentMatchPositions.length === 0) {
+                    this.status.textContent = '0 / 0';
+                    this.matchesDiv.innerHTML = '<div style="color:#888">No matches found.</div>';
+                    this.renderLogLines();
+                    this.log.scrollTop = this.log.scrollHeight;
+                    return;
+                }
+
+                const fragments = this.createSearchFragments(currentMatchPositions, query);
+                this.updateCurrentMatchIndex(currentMatchPositions);
+                this.updateStatus(currentMatchPositions);
+                this.updateMatchList(fragments, currentMatchPositions);
+                this.persistState();
+            }
+
+            createSearchFragments(matchPositions, query) {
+                const regex = this.createSearchRegex(query);
+                const fragments = [];
+
+                for (let i = 0; i < matchPositions.length; i++) {
+                    const { index, content, contentHash } = matchPositions[i];
+                    let highlighted = '';
+                    
+                    if (i === this.currentMatchIndex) {
+                        highlighted = this.escapeHTML(content).replace(regex, match => {
+                            return `<mark id="active" style="background: yellow; color: black;">${this.escapeHTML(match)}</mark>`;
+                        });
+                    } else {
+                        highlighted = this.escapeHTML(content).replace(regex, match => {
+                            return `<span style="background: rgba(255, 255, 0, 0.5); color: black;">${this.escapeHTML(match)}</span>`;
+                        });
+                    }
+                    
+                    fragments.push({ index, context: highlighted, contentHash });
+                }
+
+                return fragments;
+            }
+
+            createSearchRegex(query) {
+                const flags = this.caseToggle.checked ? 'g' : 'gi';
+                return this.regexToggle.checked
+                    ? new RegExp(query, flags)
+                    : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+            }
+
+            updateCurrentMatchIndex(matchPositions) {
+                if (this.currentMatchIndex >= matchPositions.length) {
+                    this.currentMatchIndex = matchPositions.length > 0 ? 0 : -1;
+                }
+            }
+
+            updateStatus(matchPositions) {
+                this.status.textContent = this.currentMatchIndex >= 0 
+                    ? `${this.currentMatchIndex + 1} / ${matchPositions.length}` 
+                    : `0 / ${matchPositions.length}`;
+            }
+
+            updateMatchList(fragments, matchPositionsData) {
+                if (this.matchesDiv.children.length > 0 && this.matchesDiv.children.length === fragments.length) {
+                    this.updateMatchListContent(fragments, matchPositionsData);
+                } else {
+                    this.renderMatchList(fragments, matchPositionsData);
+                }
+            }
+
+            renderMatchList(list, matchPositionsData) {
+                this.matchesDiv.innerHTML = '';
+                
+                for (let i = 0; i < list.length; i++) {
+                    const item = list[i];
+                    const div = this.createMatchItem(i, item, matchPositionsData);
+                    this.matchesDiv.appendChild(div);
+                }
+            }
+
+            createMatchItem(index, item, matchPositionsData) {
+                const div = document.createElement('div');
+                div.innerHTML = `<span style="cursor:pointer; color:#6cf;">[${index + 1}]</span> ${item.context}`;
+                div.style.padding = '4px 0';
+                div.style.borderBottom = '1px solid #222';
+                div.style.cursor = 'pointer';
+                div.style.pointerEvents = 'auto';
+
+                this.updateMatchItemHighlight(div, index);
+                div.addEventListener('click', () => this.handleMatchItemClick(index, matchPositionsData));
+                
+                return div;
+            }
+
+            updateMatchItemHighlight(div, index) {
+                if (index === this.currentMatchIndex && this.currentMatchIndex >= 0) {
+                    div.style.backgroundColor = 'rgba(0, 123, 255, 0.3)';
+                    div.style.border = '1px solid #007bff';
+                } else {
+                    div.style.backgroundColor = '';
+                    div.style.border = '';
+                }
+            }
+
+            handleMatchItemClick(index, matchPositionsData) {
+                this.currentMatchIndex = index;
+                this.status.textContent = `${this.currentMatchIndex + 1} / ${matchPositionsData.length}`;
+                this.updateMatchListHighlight();
+                
+                const matchPosition = matchPositionsData[index];
+                if (matchPosition) {
+                    this.vscode.postMessage({
+                        type: 'getLogByIndex',
+                        index: matchPosition.index,
+                        contentHash: matchPosition.contentHash
+                    });
+                }
+            }
+
+            updateMatchListHighlight() {
+                const matchItems = this.matchesDiv.querySelectorAll('div');
+                matchItems.forEach((div, index) => {
+                    this.updateMatchItemHighlight(div, index);
+                });
+            }
+
+            updateMatchListContent(fragments, matchPositionsData) {
+                const matchItems = this.matchesDiv.querySelectorAll('div');
+                const maxItems = Math.min(fragments.length, matchItems.length);
+
+                for (let i = 0; i < maxItems; i++) {
+                    const div = matchItems[i];
+                    const fragment = fragments[i];
+                    div.innerHTML = `<span style="cursor:pointer; color:#6cf;">[${i + 1}]</span> ${fragment.context}`;
+                    this.updateMatchItemHighlight(div, i);
+                }
+
+                if (fragments.length !== matchItems.length) {
+                    this.renderMatchList(fragments, matchPositionsData);
+                }
+            }
+
+            highlightLogContent(query) {
+                if (!query || this.matchPositions.length === 0) return;
+
+                const regex = this.createSearchRegex(query);
+                this.log.innerHTML = '';
+
+                this.currentLogLines.forEach((line, index) => {
+                    const lineDiv = this.createLogLineDiv(index);
+                    const highlightedLine = this.escapeHTML(line).replace(regex, match => {
+                        return `<span style="background: rgba(255, 255, 0, 0.5); color: black;">${this.escapeHTML(match)}</span>`;
+                    });
+                    lineDiv.innerHTML = highlightedLine;
+                    this.log.appendChild(lineDiv);
+                });
+            }
+
+            highlightTargetLine(targetLineIndex) {
+                if (targetLineIndex < 0 || targetLineIndex >= this.currentLogLines.length) return;
+
+                const targetLine = this.currentLogLines[targetLineIndex];
+                if (!targetLine) return;
+
+                this.log.innerHTML = '';
+
+                this.currentLogLines.forEach((line, index) => {
+                    const lineDiv = this.createLogLineDiv(index);
+                    
+                    if (index === targetLineIndex) {
+                        lineDiv.id = 'here';
+                        lineDiv.style.background = 'linear-gradient(90deg, rgba(255, 255, 0, 0.4), rgba(255, 255, 0, 0.2))';
+                        lineDiv.style.borderLeft = '4px solid #ffeb3b';
+                        lineDiv.style.padding = '2px 4px';
+                        lineDiv.style.margin = '1px 0';
+                        lineDiv.style.boxShadow = '0 0 8px rgba(255, 255, 0, 0.3)';
+                    }
+                    
+                    lineDiv.textContent = line;
+                    this.log.appendChild(lineDiv);
+                });
+
+                this.scrollToTargetLine();
+            }
+
+            createLogLineDiv(index) {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'log-line';
+                lineDiv.dataset.lineIndex = index;
+                lineDiv.style.whiteSpace = 'pre-wrap';
+                lineDiv.style.wordBreak = 'break-all';
+                return lineDiv;
+            }
+
+            scrollToTargetLine() {
+                setTimeout(() => {
+                    const targetDiv = this.log.querySelector('#here');
+                    if (targetDiv) {
+                        const targetOffsetTop = targetDiv.offsetTop;
+                        this.log.scrollTop = targetOffsetTop - this.log.clientHeight / 2 + targetDiv.clientHeight / 2;
+                    }
+                }, 10);
+            }
+
+            renderLogLines() {
+                this.log.innerHTML = '';
+                this.currentLogLines.forEach((line, index) => {
+                    const lineDiv = this.createLogLineDiv(index);
+                    lineDiv.textContent = line;
+                    this.log.appendChild(lineDiv);
+                });
+            }
+
+            clearSearchHighlights() {
+                this.matchPositions = [];
+                this.currentMatchIndex = -1;
+                this.status.textContent = '';
+                this.matchesDiv.innerHTML = '';
+                this.persistState();
+            }
+
+            clearLog() {
+                this.currentLogLines = [];
+                this.log.innerHTML = '';
+                this.vscode.postMessage({ type: 'clearLog' });
+            }
+
+            sendSearchRequest() {
+                this.vscode.postMessage({ 
+                    type: 'searchLog', 
+                    query: this.search.value.trim(), 
+                    regex: this.regexToggle.checked, 
+                    caseSensitive: this.caseToggle.checked 
+                });
+            }
+
+            escapeHTML(str) {
+                return str.replace(/[&<>"']/g, s => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+                }[s]));
+            }
+
+            restoreState() {
+                const cached = this.vscode.getState();
+                if (cached) {
+                    if (cached.searchText) this.search.value = cached.searchText;
+                    if (cached.matchIndex !== undefined) this.currentMatchIndex = cached.matchIndex;
+                }
+            }
+
+            requestInitialState() {
+                this.vscode.postMessage({ type: 'getStateRequest' });
+            }
+
+            persistState() {
+                this.vscode.setState({
+                    searchText: this.search.value.trim(),
+                    matchIndex: this.currentMatchIndex,
+                    scrollTop: this.log.scrollTop,
+                });
+                this.vscode.postMessage({
+                    type: 'updatePanelState',
+                    payload: {
+                        searchText: this.search.value.trim(),
+                        matchIndex: this.currentMatchIndex,
+                        scrollTop: this.log.scrollTop,
+                    }
+                });
+            }
+        }
+
+        // 初始化应用
+        new LogViewer();
+    </script>
+</body>
+
+</html>

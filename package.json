@@ -1,0 +1,88 @@
+{
+  "name": "log-viewer",
+  "displayName": "Log Viewer",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "clientLogViewerContainer",
+          "title": "Log Viewer(Client)",
+          "icon": "media/log-icon.svg"
+        },
+        {
+          "id": "serverLogViewerContainer",
+          "title": "Log Viewer(Server)",
+          "icon": "media/log-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "clientLogViewerContainer": [
+        {
+          "type": "webview",
+          "id": "logViewerClientView",
+          "name": "Client Logs",
+          "icon": "media/log-icon.svg"
+        }
+      ],
+      "serverLogViewerContainer": [
+        {
+          "type": "webview",
+          "id": "logViewerServerView",
+          "name": "Server Logs",
+          "icon": "media/log-icon.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Log Viewer",
+      "properties": {
+        "logViewer.clientLogPath": {
+          "type": "string",
+          "default": "D:/workspace_prgramer/client/log/log.txt",  
+          "description": "client log path。需要绝对路径。重启 vscode 生效"
+        },
+        "logViewer.serverLogPath": {
+          "type": "string",
+          "default": "D:/workspace_prgramer/server/server/bin/win/game[0-9].txt",
+          "description": "server log path。需要绝对路径。重启 vscode 生效"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "glob": "^11.0.3"
+  }
+}

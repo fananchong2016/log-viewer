@@ -67,11 +67,35 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		this.messageHandlers = MessageHandlerFactory.createHandlers(this);
 		this.loadClearedState();
 
-		this.files = glob.sync(this.logPathOrPattern);
-		console.log(`Found ${this.files.length} files for ${type}:`, this.files);
-		for (const file of this.files) {
-			this.lastSizes[file] = 0;
-			fs.watchFile(file, { interval: REFRESH_INTERVAL }, () => this.handleFileChange(file));
+		try {
+			console.log(`[${this.type}] 尝试匹配路径: ${this.logPathOrPattern}`);
+			this.files = glob.sync(this.logPathOrPattern);
+			console.log(`[${this.type}] 找到的文件:`, this.files);
+
+			if (this.files.length === 0) {
+				console.warn(`[${this.type}] 警告: 没有找到匹配的文件，路径: ${this.logPathOrPattern}`);
+				// 如果路径是单个文件且不存在，尝试创建目录
+				if (!this.logPathOrPattern.includes('*') && !this.logPathOrPattern.includes('[') && !this.logPathOrPattern.includes('?')) {
+					const dir = path.dirname(this.logPathOrPattern);
+					if (!fs.existsSync(dir)) {
+						try {
+							fs.mkdirSync(dir, { recursive: true });
+							console.log(`[${this.type}] 创建目录: ${dir}`);
+						} catch (err) {
+							console.error(`[${this.type}] 创建目录失败:`, err);
+						}
+					}
+				}
+			}
+
+			for (const file of this.files) {
+				this.lastSizes[file] = 0;
+				fs.watchFile(file, { interval: REFRESH_INTERVAL }, () => this.handleFileChange(file));
+			}
+		} catch (error) {
+			console.error(`[${this.type}] glob.sync 错误:`, error);
+			console.error(`[${this.type}] 路径: ${this.logPathOrPattern}`);
+			this.files = [];
 		}
 	}
 
@@ -79,12 +103,34 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		this.view = webviewView;
 		webviewView.webview.options = {
 			enableScripts: true,
-			localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
+			localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')]
 		};
 
-		const htmlUri = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'webview.html');
-		const htmlContent = fs.readFileSync(htmlUri.fsPath, 'utf8');
-		webviewView.webview.html = htmlContent;
+		try {
+			const htmlUri = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'webview.html');
+			const htmlContent = fs.readFileSync(htmlUri.fsPath, 'utf8');
+			webviewView.webview.html = htmlContent;
+		} catch (error) {
+			console.error(`[${this.type}] Failed to load webview HTML:`, error);
+			// 提供错误页面
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			webviewView.webview.html = `
+				<!DOCTYPE html>
+				<html>
+				<head>
+					<meta charset="utf-8">
+					<title>Log Viewer Error</title>
+				</head>
+				<body style="background: #1e1e1e; color: white; padding: 20px; font-family: sans-serif;">
+					<h3>Log Viewer 加载失败</h3>
+					<p>错误信息: ${errorMessage}</p>
+					<button onclick="location.reload()" style="padding: 8px 16px; margin-top: 10px;">
+						重新加载
+					</button>
+				</body>
+				</html>
+			`;
+		}
 
 		if (this.logBuffer.length === 0) {
 			this.pushInitialLog();

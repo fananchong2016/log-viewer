@@ -24,21 +24,32 @@
         style="flex: 1; background: #1e1e1e; color: white; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap;"></pre>
 
     <div id="matches"
-        style="max-height: 150px; overflow-y: auto; background: #111; color: #ccc; font-size: 13px; border-top: 1px solid #333; padding: 6px;">
+        style="max-height: 150px; overflow-y: auto; background: #111; color: #ccc; font-size: 13px; border-top: 1px solid #333; padding: 6px; white-space: nowrap;">
     </div>
 
     <script>
         // Webview 主逻辑
         class LogViewer {
             constructor() {
-                this.vscode = acquireVsCodeApi();
+                try {
+                    this.vscode = acquireVsCodeApi();
+                } catch (error) {
+                    console.error('Failed to acquire VS Code API:', error);
+                    // 创建一个模拟的 vscode API 用于开发测试
+                    this.vscode = {
+                        postMessage: (msg) => console.log('Mock postMessage:', msg),
+                        getState: () => null,
+                        setState: (state) => console.log('Mock setState:', state)
+                    };
+                }
+
                 this.currentLogLines = [];
                 this.matchPositions = [];
                 this.currentMatchIndex = -1;
                 this.searchHistory = [];
                 this.historyIndex = -1;
                 this.searchTimeout = null;
-                
+
                 this.initElements();
                 this.initEventListeners();
                 this.restoreState();
@@ -58,25 +69,25 @@
             initEventListeners() {
                 // 消息监听
                 window.addEventListener('message', this.handleMessage.bind(this));
-                
+
                 // 清除日志按钮
                 this.clearLogBtn.addEventListener('click', this.clearLog.bind(this));
-                
+
                 // 搜索相关事件
                 this.search.addEventListener('keydown', this.handleSearchKeydown.bind(this));
                 this.regexToggle.addEventListener('change', this.sendSearchRequest.bind(this));
                 this.caseToggle.addEventListener('change', this.sendSearchRequest.bind(this));
-                
+
                 // 搜索框输入监听
                 this.search.addEventListener('input', this.handleSearchInput.bind(this));
-                
+
                 // 定期保存状态
                 setInterval(() => this.persistState(), 1000);
             }
 
             handleMessage(event) {
                 const { type, lines, history, payload, targetLineIndex } = event.data;
-                
+
                 switch (type) {
                     case 'history':
                         this.handleHistory(history);
@@ -138,9 +149,9 @@
                     this.clearSearchHighlights();
                     const query = this.search.value.trim();
                     this.sendSearchRequest();
-                    
+
                     if (!query) return;
-                    
+
                     this.updateSearchHistory(query);
                 } else if (e.key === 'ArrowUp') {
                     this.navigateHistory(-1);
@@ -160,7 +171,7 @@
 
             navigateHistory(direction) {
                 if (this.searchHistory.length === 0) return;
-                
+
                 if (direction === -1) {
                     this.historyIndex = Math.max(0, this.historyIndex - 1);
                     this.search.value = this.searchHistory[this.historyIndex];
@@ -220,7 +231,7 @@
                 for (let i = 0; i < matchPositions.length; i++) {
                     const { index, content, contentHash } = matchPositions[i];
                     let highlighted = '';
-                    
+
                     if (i === this.currentMatchIndex) {
                         highlighted = this.escapeHTML(content).replace(regex, match => {
                             return `<mark id="active" style="background: yellow; color: black;">${this.escapeHTML(match)}</mark>`;
@@ -230,7 +241,7 @@
                             return `<span style="background: rgba(255, 255, 0, 0.5); color: black;">${this.escapeHTML(match)}</span>`;
                         });
                     }
-                    
+
                     fragments.push({ index, context: highlighted, contentHash });
                 }
 
@@ -251,8 +262,8 @@
             }
 
             updateStatus(matchPositions) {
-                this.status.textContent = this.currentMatchIndex >= 0 
-                    ? `${this.currentMatchIndex + 1} / ${matchPositions.length}` 
+                this.status.textContent = this.currentMatchIndex >= 0
+                    ? `${this.currentMatchIndex + 1} / ${matchPositions.length}`
                     : `0 / ${matchPositions.length}`;
             }
 
@@ -266,7 +277,7 @@
 
             renderMatchList(list, matchPositionsData) {
                 this.matchesDiv.innerHTML = '';
-                
+
                 for (let i = 0; i < list.length; i++) {
                     const item = list[i];
                     const div = this.createMatchItem(i, item, matchPositionsData);
@@ -281,10 +292,13 @@
                 div.style.borderBottom = '1px solid #222';
                 div.style.cursor = 'pointer';
                 div.style.pointerEvents = 'auto';
+                div.style.whiteSpace = 'nowrap';
+                div.style.overflow = 'hidden';
+                div.style.textOverflow = 'ellipsis';
 
                 this.updateMatchItemHighlight(div, index);
                 div.addEventListener('click', () => this.handleMatchItemClick(index, matchPositionsData));
-                
+
                 return div;
             }
 
@@ -302,7 +316,7 @@
                 this.currentMatchIndex = index;
                 this.status.textContent = `${this.currentMatchIndex + 1} / ${matchPositionsData.length}`;
                 this.updateMatchListHighlight();
-                
+
                 const matchPosition = matchPositionsData[index];
                 if (matchPosition) {
                     this.vscode.postMessage({
@@ -362,7 +376,7 @@
 
                 this.currentLogLines.forEach((line, index) => {
                     const lineDiv = this.createLogLineDiv(index);
-                    
+
                     if (index === targetLineIndex) {
                         lineDiv.id = 'here';
                         lineDiv.style.background = 'linear-gradient(90deg, rgba(255, 255, 0, 0.4), rgba(255, 255, 0, 0.2))';
@@ -371,7 +385,7 @@
                         lineDiv.style.margin = '1px 0';
                         lineDiv.style.boxShadow = '0 0 8px rgba(255, 255, 0, 0.3)';
                     }
-                    
+
                     lineDiv.textContent = line;
                     this.log.appendChild(lineDiv);
                 });
@@ -422,11 +436,11 @@
             }
 
             sendSearchRequest() {
-                this.vscode.postMessage({ 
-                    type: 'searchLog', 
-                    query: this.search.value.trim(), 
-                    regex: this.regexToggle.checked, 
-                    caseSensitive: this.caseToggle.checked 
+                this.vscode.postMessage({
+                    type: 'searchLog',
+                    query: this.search.value.trim(),
+                    regex: this.regexToggle.checked,
+                    caseSensitive: this.caseToggle.checked
                 });
             }
 
@@ -466,7 +480,30 @@
         }
 
         // 初始化应用
-        new LogViewer();
+        function initLogViewer() {
+            try {
+                new LogViewer();
+            } catch (error) {
+                console.error('Failed to initialize LogViewer:', error);
+                // 显示错误信息
+                document.body.innerHTML = `
+                    <div style="padding: 20px; color: white; background: #1e1e1e; height: 100%;">
+                        <h3>Log Viewer 初始化失败</h3>
+                        <p>错误信息: ${error.message}</p>
+                        <button onclick="location.reload()" style="padding: 8px 16px; margin-top: 10px;">
+                            重新加载
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // 等待 DOM 完全加载后再初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initLogViewer);
+        } else {
+            initLogViewer();
+        }
     </script>
 </body>
 

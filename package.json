@@ -72,6 +72,16 @@
           "type": "string",
           "default": "D:/workspace_prgramer/server/server/bin/win/game[0-9].txt",
           "description": "server log path。需要绝对路径。重启 vscode 生效"
+        },
+        "logViewer.functionIndexPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "D:/workspace_prgramer/server/server/script/body_entities/avatar_members/imp*.py"
+          ],
+          "description": "函数索引路径列表，支持 glob 模式。用于代码跳转功能"
         }
       }
     }

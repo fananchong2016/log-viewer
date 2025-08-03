@@ -411,6 +411,9 @@
 
             renderLogLines() {
                 const needScroll = this.isAtBottom();
+                if (!needScroll) {
+                    return;
+                }
                 this.log.innerHTML = '';
                 this.currentLogLines.forEach((line, index) => {
                     const lineDiv = this.createLogLineDiv(index);

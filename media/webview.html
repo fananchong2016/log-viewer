@@ -125,7 +125,6 @@
 
                 if (!this.search.value.trim()) {
                     this.renderLogLines();
-                    this.log.scrollTop = this.log.scrollHeight;
                 } else {
                     setTimeout(() => {
                         if (targetLineIndex !== undefined) {
@@ -203,7 +202,6 @@
                 if (!query) {
                     this.clearSearchHighlights();
                     this.renderLogLines();
-                    this.log.scrollTop = this.log.scrollHeight;
                     return;
                 }
 
@@ -213,7 +211,6 @@
                     this.status.textContent = '0 / 0';
                     this.matchesDiv.innerHTML = '<div style="color:#888">No matches found.</div>';
                     this.renderLogLines();
-                    this.log.scrollTop = this.log.scrollHeight;
                     return;
                 }
 
@@ -413,12 +410,16 @@
             }
 
             renderLogLines() {
+                const needScroll = this.isAtBottom();
                 this.log.innerHTML = '';
                 this.currentLogLines.forEach((line, index) => {
                     const lineDiv = this.createLogLineDiv(index);
                     lineDiv.textContent = line;
                     this.log.appendChild(lineDiv);
                 });
+                if (needScroll) {
+                    this.log.scrollTop = this.log.scrollHeight;
+                }
             }
 
             clearSearchHighlights() {
@@ -476,6 +477,12 @@
                         scrollTop: this.log.scrollTop,
                     }
                 });
+            }
+
+            // 判断是否在底部（精确判断）
+            isAtBottom() {
+                const threshold = 1; // 允许1像素的误差
+                return Math.abs(this.log.scrollTop + this.log.clientHeight - this.log.scrollHeight) <= threshold;
             }
         }
 

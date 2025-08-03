@@ -1,8 +1,21 @@
 {
   "name": "log-viewer",
   "displayName": "Log Viewer",
-  "description": "",
+  "description": "A powerful log viewer extension for VS Code that provides real-time log monitoring with search, filtering, and syntax highlighting capabilities.",
   "version": "0.0.1",
+  "publisher": "fananchong",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fananchong2016/log-viewer.git"
+  },
+  "keywords": [
+    "log",
+    "viewer",
+    "monitoring",
+    "debugging",
+    "logs"
+  ],
+  "license": "MIT",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -69,7 +82,10 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "vsce package",
+    "publish": "node scripts/publish.js",
+    "publish:marketplace": "vsce publish"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

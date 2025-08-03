@@ -229,12 +229,15 @@
                     const { index, content, contentHash } = matchPositions[i];
                     let highlighted = '';
 
+                    // 处理内容中的转义字符
+                    const processedContent = this.processLogLine(content);
+
                     if (i === this.currentMatchIndex) {
-                        highlighted = this.escapeHTML(content).replace(regex, match => {
+                        highlighted = this.escapeHTML(processedContent).replace(regex, match => {
                             return `<mark id="active" style="background: yellow; color: black;">${this.escapeHTML(match)}</mark>`;
                         });
                     } else {
-                        highlighted = this.escapeHTML(content).replace(regex, match => {
+                        highlighted = this.escapeHTML(processedContent).replace(regex, match => {
                             return `<span style="background: rgba(255, 255, 0, 0.5); color: black;">${this.escapeHTML(match)}</span>`;
                         });
                     }
@@ -355,7 +358,8 @@
 
                 this.currentLogLines.forEach((line, index) => {
                     const lineDiv = this.createLogLineDiv(index);
-                    const highlightedLine = this.escapeHTML(line).replace(regex, match => {
+                    const processedLine = this.processLogLine(line);
+                    const highlightedLine = this.escapeHTML(processedLine).replace(regex, match => {
                         return `<span style="background: rgba(255, 255, 0, 0.5); color: black;">${this.escapeHTML(match)}</span>`;
                     });
                     lineDiv.innerHTML = highlightedLine;
@@ -383,7 +387,8 @@
                         lineDiv.style.boxShadow = '0 0 8px rgba(255, 255, 0, 0.3)';
                     }
 
-                    lineDiv.textContent = line;
+                    const processedLine = this.processLogLine(line);
+                    lineDiv.textContent = processedLine;
                     this.log.appendChild(lineDiv);
                 });
 
@@ -417,7 +422,9 @@
                 this.log.innerHTML = '';
                 this.currentLogLines.forEach((line, index) => {
                     const lineDiv = this.createLogLineDiv(index);
-                    lineDiv.textContent = line;
+                    // 处理 JSON 中的 \n 字符，转换为实际换行
+                    const processedLine = this.processLogLine(line);
+                    lineDiv.textContent = processedLine;
                     this.log.appendChild(lineDiv);
                 });
                 if (needScroll) {
@@ -480,6 +487,20 @@
                         scrollTop: this.log.scrollTop,
                     }
                 });
+            }
+
+            // 处理日志行中的转义字符
+            processLogLine(line) {
+                if (!line) return line;
+                
+                // 处理常见的转义字符
+                return line
+                    .replace(/\\n/g, '\n')        // \n -> 换行
+                    .replace(/\\t/g, '\t')        // \t -> 制表符
+                    .replace(/\\r/g, '\r')        // \r -> 回车
+                    .replace(/\\"/g, '"')         // \" -> 双引号
+                    .replace(/\\'/g, "'")         // \' -> 单引号
+                    .replace(/\\\\/g, '\\');      // \\ -> 反斜杠
             }
 
             // 判断是否在底部（精确判断）

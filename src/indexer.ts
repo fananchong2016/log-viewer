@@ -44,13 +44,15 @@ export function buildFunctionIndex(): Map<string, vscode.Location[]> {
                         const content = fs.readFileSync(fullPath, 'utf8');
                         const lines = content.split('\n');
                         let functionCount = 0;
+                        let propertyCount = 0;
                         
                         for (let i = 0; i < lines.length; i++) {
                             const line = lines[i];
+                            
                             // 匹配缩进的函数定义
-                            const match = line.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
-                            if (match) {
-                                const fnName = match[1];
+                            const functionMatch = line.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
+                            if (functionMatch) {
+                                const fnName = functionMatch[1];
                                 const uri = vscode.Uri.file(fullPath);
                                 const range = new vscode.Range(i, 0, i, line.length);
                                 if (!index.has(fnName)) { 
@@ -58,10 +60,24 @@ export function buildFunctionIndex(): Map<string, vscode.Location[]> {
                                 }
                                 index.get(fnName)?.push(new vscode.Location(uri, range));
                                 functionCount++;
-                                console.log(`Found function: ${fnName} in ${path.basename(fullPath)}`);
+                                // console.log(`Found function: ${fnName} in ${path.basename(fullPath)}`);
+                            }
+                            
+                            // 匹配 Property 声明
+                            const propertyMatch = line.match(/^\s*Property\s*\(\s*"([^"]+)"\s*,/);
+                            if (propertyMatch) {
+                                const propertyName = propertyMatch[1];
+                                const uri = vscode.Uri.file(fullPath);
+                                const range = new vscode.Range(i, 0, i, line.length);
+                                if (!index.has(propertyName)) { 
+                                    index.set(propertyName, []); 
+                                }
+                                index.get(propertyName)?.push(new vscode.Location(uri, range));
+                                propertyCount++;
+                                // console.log(`Found property: ${propertyName} in ${path.basename(fullPath)}`);
                             }
                         }
-                        console.log(`Indexed ${functionCount} functions from ${path.basename(fullPath)}`);
+                        // console.log(`Indexed ${functionCount} functions and ${propertyCount} properties from ${path.basename(fullPath)}`);
                     } catch (error) {
                         console.error(`Failed to process file ${fullPath}:`, error);
                     }
@@ -74,6 +90,6 @@ export function buildFunctionIndex(): Map<string, vscode.Location[]> {
         }
     });
 
-    console.log(`Function index initialized with ${index.size} functions`);
+    console.log(`Function index initialized with ${index.size} functions and properties`);
     return index;
 }

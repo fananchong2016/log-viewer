@@ -251,7 +251,9 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 
 		for (let i = 0; i < logSnapshot.length; i++) {
 			const line = logSnapshot[i];
-			if (r.test(line)) {
+			// 为每一行创建新的正则表达式实例，避免 lastIndex 问题
+			const lineRegex = new RegExp(r.source, r.flags);
+			if (lineRegex.test(line)) {
 				matches.push({
 					index: i,
 					content: line,

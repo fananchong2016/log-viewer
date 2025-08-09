@@ -62,6 +62,7 @@
 
                 this.initElements();
                 this.initEventListeners();
+                this.hideMatchesDiv(); // 初始化时隐藏匹配栏
                 this.restoreState();
                 this.requestInitialState();
             }
@@ -124,6 +125,8 @@
                     this.search.value = payload.searchText;
                     this.currentMatchIndex = payload.matchIndex || -1;
                     setTimeout(() => this.applySearch(this.search.value), 50);
+                } else {
+                    this.hideMatchesDiv();
                 }
                 if (payload.scrollTop !== undefined) {
                     setTimeout(() => { this.log.scrollTop = payload.scrollTop; }, 100);
@@ -203,9 +206,11 @@
                 if (!query) {
                     this.clearSearchHighlights();
                     this.renderLogLines();
+                    this.hideMatchesDiv();
                     return;
                 }
 
+                this.showMatchesDiv();
                 const currentMatchPositions = [...this.matchPositions];
 
                 if (currentMatchPositions.length === 0) {
@@ -474,6 +479,14 @@
                 this.status.textContent = '';
                 this.matchesDiv.innerHTML = '';
                 this.persistState();
+            }
+
+            showMatchesDiv() {
+                this.matchesDiv.style.display = 'block';
+            }
+
+            hideMatchesDiv() {
+                this.matchesDiv.style.display = 'none';
             }
 
             clearLog() {

@@ -34,7 +34,7 @@
         style="flex: 1; background: #1e1e1e; color: white; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap;"></pre>
 
     <div id="matches"
-        style="max-height: 150px; overflow-y: auto; background: #3a3a3a; color: #ccc; font-size: 13px; border: 1px solid #4CAF50; border-radius: 6px; padding: 8px; margin: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+        style="max-height: 100px; overflow-y: auto; background: #3a3a3a; color: #ccc; font-size: 12px; border: 1px solid #4CAF50; border-radius: 4px; padding: 4px; margin: 3px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">
     </div>
 
     <script>
@@ -294,16 +294,17 @@
             createMatchItem(index, item, matchPositionsData) {
                 const div = document.createElement('div');
                 div.innerHTML = `<span style="cursor:pointer; color:#6cf;">[${index + 1}]</span> ${item.context}`;
-                div.style.padding = '6px 8px';
+                div.style.padding = '2px 4px';
                 div.style.borderBottom = '1px solid #4CAF50';
                 div.style.cursor = 'pointer';
                 div.style.pointerEvents = 'auto';
                 div.style.whiteSpace = 'nowrap';
                 div.style.overflow = 'hidden';
                 div.style.textOverflow = 'ellipsis';
-                div.style.borderRadius = '3px';
-                div.style.margin = '2px 0';
+                div.style.borderRadius = '2px';
+                div.style.margin = '1px 0';
                 div.style.transition = 'background-color 0.2s ease, border 0.2s ease, box-shadow 0.2s ease';
+                div.style.lineHeight = '1.2';
 
                 // 设置数据属性
                 div.dataset.matchIndex = index;
@@ -318,8 +319,8 @@
             updateMatchItemHighlight(div, index) {
                 if (index === this.currentMatchIndex && this.currentMatchIndex >= 0) {
                     div.style.backgroundColor = 'rgba(76, 175, 80, 0.3)';
-                    div.style.border = '2px solid #4CAF50';
-                    div.style.boxShadow = '0 0 8px rgba(76, 175, 80, 0.4)';
+                    div.style.border = '1px solid #4CAF50';
+                    div.style.boxShadow = '0 0 4px rgba(76, 175, 80, 0.4)';
                 } else {
                     div.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
                     div.style.border = '1px solid transparent';

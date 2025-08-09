@@ -8,23 +8,33 @@
 
 <body style="height: 100%; margin: 0; display: flex; flex-direction: column; font-family: sans-serif;">
 
-    <div style="padding: 6px; background: #2d2d2d; display: flex; align-items: center;">
-        <input id="search" type="text" placeholder="Search logs..." style="flex: 1; padding: 6px;" />
-        <label style="color: white; margin-left: 12px; font-size: 12px;">
-            <input type="checkbox" id="regex" /> 正则
-        </label>
-        <label style="color: white; margin-left: 8px; font-size: 12px;">
-            <input type="checkbox" id="caseSensitive" /> 区分大小写
-        </label>
-        <button id="clearLogBtn" style="margin-left: 12px; padding: 4px 8px;">清除日志</button>
-        <div id="status" style="color: white; margin-left: 8px; white-space: nowrap;"></div>
+    <div style="padding: 6px; background: #2d2d2d; display: flex; align-items: center; gap: 16px;">
+        <!-- 左半部分：搜索区域 -->
+        <div style="flex: 1; display: flex; align-items: center; background: #3a3a3a; border: 1px solid #555; border-radius: 6px; padding: 8px;">
+            <div style="color: #4CAF50; font-weight: bold; font-size: 12px; margin-right: 8px; white-space: nowrap;">🔍 搜索</div>
+            <input id="search" type="text" placeholder="Search logs..." style="flex: 1; padding: 6px; border: 1px solid #666; border-radius: 3px; background: #2a2a2a; color: white;" />
+            <label style="color: white; margin-left: 12px; font-size: 12px;">
+                <input type="checkbox" id="regex" /> 正则
+            </label>
+            <label style="color: white; margin-left: 8px; font-size: 12px;">
+                <input type="checkbox" id="caseSensitive" /> 区分大小写
+            </label>
+            <button id="clearLogBtn" style="margin-left: 12px; padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">清除日志</button>
+            <div id="status" style="color: white; margin-left: 8px; white-space: nowrap;"></div>
+        </div>
+
+        <!-- 右半部分：GM指令区域 -->
+        <div style="flex: 1; display: flex; align-items: center; background: #4a3a4a; border: 1px solid #665566; border-radius: 6px; padding: 8px;">
+            <div style="color: #FF9800; font-weight: bold; font-size: 12px; margin-right: 8px; white-space: nowrap;">⚡ GM指令</div>
+            <input id="gmCommand" type="text" placeholder="请输入GM指令..." style="flex: 1; padding: 6px; border: 1px solid #776677; border-radius: 3px; background: #3a2a3a; color: white;" />
+        </div>
     </div>
 
     <pre id="log"
         style="flex: 1; background: #1e1e1e; color: white; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap;"></pre>
 
     <div id="matches"
-        style="max-height: 150px; overflow-y: auto; background: #111; color: #ccc; font-size: 13px; border-top: 1px solid #333; padding: 6px; white-space: nowrap;">
+        style="max-height: 150px; overflow-y: auto; background: #3a3a3a; color: #ccc; font-size: 13px; border: 1px solid #4CAF50; border-radius: 6px; padding: 8px; margin: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
     </div>
 
     <script>
@@ -77,6 +87,9 @@
                 this.search.addEventListener('keydown', this.handleSearchKeydown.bind(this));
                 this.regexToggle.addEventListener('change', this.sendSearchRequest.bind(this));
                 this.caseToggle.addEventListener('change', this.sendSearchRequest.bind(this));
+
+                // 匹配项点击事件委托
+                this.matchesDiv.addEventListener('click', this.handleMatchesDivClick.bind(this));
 
                 // 定期保存状态
                 setInterval(() => this.persistState(), 1000);
@@ -197,7 +210,7 @@
 
                 if (currentMatchPositions.length === 0) {
                     this.status.textContent = '0 / 0';
-                    this.matchesDiv.innerHTML = '<div style="color:#888">No matches found.</div>';
+                    this.matchesDiv.innerHTML = '<div style="color:#888; text-align: center; padding: 20px; font-style: italic;">🔍 未找到匹配项</div>';
                     this.renderLogLines();
                     return;
                 }
@@ -276,31 +289,61 @@
             createMatchItem(index, item, matchPositionsData) {
                 const div = document.createElement('div');
                 div.innerHTML = `<span style="cursor:pointer; color:#6cf;">[${index + 1}]</span> ${item.context}`;
-                div.style.padding = '4px 0';
-                div.style.borderBottom = '1px solid #222';
+                div.style.padding = '6px 8px';
+                div.style.borderBottom = '1px solid #4CAF50';
                 div.style.cursor = 'pointer';
                 div.style.pointerEvents = 'auto';
                 div.style.whiteSpace = 'nowrap';
                 div.style.overflow = 'hidden';
                 div.style.textOverflow = 'ellipsis';
+                div.style.borderRadius = '3px';
+                div.style.margin = '2px 0';
+                div.style.transition = 'background-color 0.2s ease, border 0.2s ease, box-shadow 0.2s ease';
+
+                // 设置数据属性
+                div.dataset.matchIndex = index;
+                div.dataset.logIndex = matchPositionsData[index].index;
+                div.dataset.contentHash = matchPositionsData[index].contentHash;
 
                 this.updateMatchItemHighlight(div, index);
-                div.addEventListener('click', () => this.handleMatchItemClick(index, matchPositionsData));
 
                 return div;
             }
 
             updateMatchItemHighlight(div, index) {
                 if (index === this.currentMatchIndex && this.currentMatchIndex >= 0) {
-                    div.style.backgroundColor = 'rgba(0, 123, 255, 0.3)';
-                    div.style.border = '1px solid #007bff';
+                    div.style.backgroundColor = 'rgba(76, 175, 80, 0.3)';
+                    div.style.border = '2px solid #4CAF50';
+                    div.style.boxShadow = '0 0 8px rgba(76, 175, 80, 0.4)';
                 } else {
-                    div.style.backgroundColor = '';
-                    div.style.border = '';
+                    div.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+                    div.style.border = '1px solid transparent';
+                    div.style.boxShadow = 'none';
                 }
             }
 
+            handleMatchesDivClick(event) {
+                // 事件委托处理匹配项点击
+                const target = event.target.closest('div[data-match-index]');
+                if (!target) return;
+
+                const matchIndex = parseInt(target.dataset.matchIndex);
+                const logIndex = parseInt(target.dataset.logIndex);
+                const contentHash = target.dataset.contentHash;
+
+                this.currentMatchIndex = matchIndex;
+                this.status.textContent = `${this.currentMatchIndex + 1} / ${this.matchPositions.length}`;
+                this.updateMatchListHighlight();
+
+                this.vscode.postMessage({
+                    type: 'getLogByIndex',
+                    index: logIndex,
+                    contentHash: contentHash
+                });
+            }
+
             handleMatchItemClick(index, matchPositionsData) {
+                // 保留此方法用于向后兼容，但现在使用事件委托
                 this.currentMatchIndex = index;
                 this.status.textContent = `${this.currentMatchIndex + 1} / ${matchPositionsData.length}`;
                 this.updateMatchListHighlight();
@@ -331,6 +374,11 @@
                     const fragment = fragments[i];
                     div.innerHTML = `<span style="cursor:pointer; color:#6cf;">[${i + 1}]</span> ${fragment.context}`;
                     this.updateMatchItemHighlight(div, i);
+
+                    // 更新数据属性，用于事件委托
+                    div.dataset.matchIndex = i;
+                    div.dataset.logIndex = matchPositionsData[i].index;
+                    div.dataset.contentHash = matchPositionsData[i].contentHash;
                 }
 
                 if (fragments.length !== matchItems.length) {

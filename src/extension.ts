@@ -32,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // 刷新频率
-const REFRESH_INTERVAL = 50;
+const REFRESH_INTERVAL = 200;
 
 class LogViewerProvider implements vscode.WebviewViewProvider {
 	private type: 'client' | 'server';
@@ -232,7 +232,9 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		// 创建当前日志缓冲区的快照
 		const logSnapshot = [...this.logBuffer];
 
-		for (let i = 0; i < logSnapshot.length; i++) {
+		// 倒着遍历日志，匹配到100条时停止
+		const maxMatches = 100;
+		for (let i = logSnapshot.length - 1; i >= 0 && matches.length < maxMatches; i--) {
 			const line = logSnapshot[i];
 			// 为每一行创建新的正则表达式实例，避免 lastIndex 问题
 			const lineRegex = new RegExp(r.source, r.flags);
@@ -244,7 +246,7 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 				});
 			}
 		}
-
+		matches.reverse();
 		return matches;
 	}
 

@@ -4,8 +4,6 @@ import * as path from 'path';
 import * as glob from 'glob';
 import { IMessageHandler } from './messageHandlers/i_message_handler';
 import { MessageHandlerFactory } from './messageHandlers/message_handler_factory';
-import { buildFunctionIndex } from './indexer';
-import { getWordAtPosition, isSelfMethod } from './utils';
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('Log Viewer extension is now active!');
@@ -25,38 +23,6 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerWebviewViewProvider('logViewerServerView', serverProvider)
 	);
 
-
-	// 构建函数索引
-	const functionIndex = buildFunctionIndex();
-
-	// 注册跳转定义功能
-	const defProvider = vscode.languages.registerDefinitionProvider('python', {
-		provideDefinition(document, position, token) {
-			const word = getWordAtPosition(document, position);
-			if (!word) { 
-				console.log('No word found at position');
-				return; 
-			}
-
-			console.log(`Looking for definition of: ${word}`);
-			console.log(`Function index size: ${functionIndex.size}`);
-
-			// self.foo() 跳转支持
-			const lineText = document.lineAt(position.line).text;
-			if (isSelfMethod(lineText, word)) {
-				const locations = functionIndex.get(word);
-				console.log(`Found ${locations?.length || 0} locations for ${word}`);
-				return locations && locations.length > 0 ? locations[0] : undefined;
-			}
-
-			// 普通函数跳转
-			const locations = functionIndex.get(word);
-			console.log(`Found ${locations?.length || 0} locations for ${word}`);
-			return locations && locations.length > 0 ? locations[0] : undefined;
-		}
-	});
-
-	context.subscriptions.push(defProvider);
 	context.subscriptions.push({
 		dispose: () => {
 			clientProvider.dispose();
@@ -105,6 +71,23 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 			console.log(`[${this.type}] 尝试匹配路径: ${this.logPathOrPattern}`);
 			this.files = glob.sync(this.logPathOrPattern);
 			console.log(`[${this.type}] 找到的文件:`, this.files);
+
+			if (this.files.length === 0) {
+				console.warn(`[${this.type}] 警告: 没有找到匹配的文件，路径: ${this.logPathOrPattern}`);
+				// 如果路径是单个文件且不存在，尝试创建目录
+				if (!this.logPathOrPattern.includes('*') && !this.logPathOrPattern.includes('[') && !this.logPathOrPattern.includes('?')) {
+					const dir = path.dirname(this.logPathOrPattern);
+					if (!fs.existsSync(dir)) {
+						try {
+							fs.mkdirSync(dir, { recursive: true });
+							console.log(`[${this.type}] 创建目录: ${dir}`);
+						} catch (err) {
+							console.error(`[${this.type}] 创建目录失败:`, err);
+						}
+					}
+				}
+			}
+
 			for (const file of this.files) {
 				this.lastSizes[file] = 0;
 				fs.watchFile(file, { interval: REFRESH_INTERVAL }, () => this.handleFileChange(file));

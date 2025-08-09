@@ -10,7 +10,6 @@
 - 🎨 **语法高亮** - 自动识别和格式化 JSON 错误堆栈
 - 📱 **双面板** - 独立的客户端和服务器日志面板
 - 💾 **状态保持** - 记住搜索历史和滚动位置
-- 🚀 **代码跳转** - 支持 Python 函数定义跳转（F12 或 Ctrl+Click）
 
 ## 安装
 
@@ -26,11 +25,6 @@
 {
   "logViewer.clientLogPath": "D:/your-project/client/log/log.txt",
   "logViewer.serverLogPath": "D:/your-project/server/logs/game*.txt",
-  "logViewer.functionIndexPaths": [
-    "D:/your-project/server/server/script/body_entities/avatar_members/imp*.py",
-    "D:/your-project/server/server/script/other_modules/*.py",
-    "D:/your-project/server/server/script/utils/*.py"
-  ]
 }
 ```
 
@@ -38,10 +32,6 @@
 
 - **clientLogPath**: 客户端日志文件路径（绝对路径）
 - **serverLogPath**: 服务器日志文件路径，支持通配符模式
-- **functionIndexPaths**: 函数索引路径列表，用于代码跳转功能
-  - 支持 glob 模式匹配（如 `*.py`、`imp*.py`）
-  - 支持多个路径配置
-  - 重启 VS Code 后生效
 
 ## 使用方法
 
@@ -51,11 +41,7 @@
 3. 使用搜索框进行日志搜索
 4. 支持正则表达式和区分大小写搜索
 
-### 代码跳转
-1. 配置 `functionIndexPaths` 设置函数索引路径
-2. 在 Python 文件中将光标放在函数名上
-3. 按 `F12` 或 `Ctrl+Click` 跳转到函数定义
-4. 支持 `self.method()` 和普通函数跳转
+
 
 ## 开发
 

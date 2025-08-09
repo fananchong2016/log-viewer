@@ -78,9 +78,6 @@
                 this.regexToggle.addEventListener('change', this.sendSearchRequest.bind(this));
                 this.caseToggle.addEventListener('change', this.sendSearchRequest.bind(this));
 
-                // 搜索框输入监听
-                this.search.addEventListener('input', this.handleSearchInput.bind(this));
-
                 // 定期保存状态
                 setInterval(() => this.persistState(), 1000);
             }
@@ -157,15 +154,6 @@
                 } else if (e.key === 'ArrowDown') {
                     this.navigateHistory(1);
                 }
-            }
-
-            handleSearchInput() {
-                if (this.searchTimeout) {
-                    clearTimeout(this.searchTimeout);
-                }
-                this.searchTimeout = setTimeout(() => {
-                    this.sendSearchRequest();
-                }, 300);
             }
 
             navigateHistory(direction) {
@@ -492,7 +480,7 @@
             // 处理日志行中的转义字符
             processLogLine(line) {
                 if (!line) return line;
-                
+
                 // 处理常见的转义字符
                 return line
                     .replace(/\\n/g, '\n')        // \n -> 换行

@@ -106,10 +106,8 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		this.stateKey = `${type}_panel_state`;
 		this.messageHandlers = MessageHandlerFactory.createHandlers(this);
 
-		// 初始化快速搜索计数器
-		Array.from(this.quickSearchKeywords).forEach(keyword => {
-			this.quickSearchCounts.set(keyword, 0);
-		});
+		// 不再在这里初始化计数器为0，让计数器自然增长
+		// 这样可以保持计数器的连续性，避免不必要的重置
 
 		// 预加载历史记录和状态
 		this.loadClearedState();
@@ -351,7 +349,10 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 			const sorted = this.sortLogLines(this.pendingLog);
 
 			// 在添加到 logBuffer 之前，先检查新增日志中的匹配
-			this.updateQuickSearchCountsFromNewLogs(sorted);
+			// 只在非搜索视图下更新计数器，避免频繁更新
+			if (this.inSearchView === -1) {
+				this.updateQuickSearchCountsFromNewLogs(sorted);
+			}
 
 			this.logBuffer.push(...sorted);
 			this.pendingLog = [];
@@ -491,13 +492,35 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 
 	// 检查并更新快速搜索计数
 	private checkAndUpdateQuickSearchCounts(): void {
-		// 重置所有计数器为 0
-		Array.from(this.quickSearchKeywords).forEach(keyword => {
-			this.quickSearchCounts.set(keyword, 0);
-		});
+		// 如果计数器还没有初始化，则从现有日志中计算初始值
+		// 而不是简单地重置为0
+		if (this.quickSearchCounts.size === 0) {
+			// 从现有日志中计算初始计数，而不是重置为0
+			this.calculateInitialCounts();
+		}
 
 		// 复用增量更新逻辑，传入整个 logBuffer
 		this.updateQuickSearchCountsFromNewLogs(this.logBuffer);
+	}
+
+	// 计算初始计数的方法
+	private calculateInitialCounts(): void {
+		// 预编译正则表达式，提高性能
+		const regexMap = new Map<string, RegExp>();
+		Array.from(this.quickSearchKeywords).forEach(keyword => {
+			regexMap.set(keyword, new RegExp(keyword, 'i'));
+		});
+
+		// 从现有日志中计算初始计数
+		this.logBuffer.forEach(line => {
+			Array.from(this.quickSearchKeywords).forEach(keyword => {
+				const regex = regexMap.get(keyword)!;
+				if (regex.test(line)) {
+					const currentCount = this.quickSearchCounts.get(keyword) || 0;
+					this.quickSearchCounts.set(keyword, currentCount + 1);
+				}
+			});
+		});
 	}
 
 	// 从新增日志中更新快速搜索计数（性能优化版本）

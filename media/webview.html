@@ -177,8 +177,9 @@
             handleLog(lines, targetLineIndex) {
                 this.currentLogLines = lines || [];
 
-                // 更新快速搜索计数器 - 只在有实际日志数据时更新
-                if (lines && lines.length > 0) {
+                // 更新快速搜索计数器 - 只在有实际日志数据且不是搜索视图时更新
+                // 避免在搜索视图下频繁更新计数器
+                if (lines && lines.length > 0 && !this.search.value.trim()) {
                     this.checkAndUpdateQuickSearchCounts();
                 }
 
@@ -199,6 +200,12 @@
                 setTimeout(() => {
                     this.matchPositions = payload;
                     this.applySearch(this.search.value.trim());
+                    
+                    // 搜索完成后，重新计算快速搜索计数器
+                    // 确保计数准确性
+                    if (this._isInitialized) {
+                        this.checkAndUpdateQuickSearchCounts();
+                    }
                 }, 0);
             }
 
@@ -732,12 +739,26 @@
 
             // 更新快速搜索计数器
             updateQuickSearchCounts() {
+                // 批量更新，避免频繁DOM操作
+                const updates = [];
+                
                 this.quickSearchCounts.forEach((count, keyword) => {
                     const countSpan = document.getElementById(`count_${keyword}`);
                     if (countSpan) {
-                        countSpan.textContent = count.toString();
+                        updates.push({ element: countSpan, count: count.toString() });
                     }
                 });
+                
+                // 使用 requestAnimationFrame 批量更新DOM
+                if (updates.length > 0) {
+                    requestAnimationFrame(() => {
+                        updates.forEach(({ element, count }) => {
+                            if (element.textContent !== count) {
+                                element.textContent = count;
+                            }
+                        });
+                    });
+                }
             }
 
             // 检查并更新快速搜索计数
@@ -754,25 +775,29 @@
 
                 this._quickSearchUpdateTimer = setTimeout(() => {
                     this._performQuickSearchUpdate();
-                }, 50);
+                }, 200); // 增加防抖时间到200ms
             }
 
             // 实际执行快速搜索更新的方法
             _performQuickSearchUpdate() {
-                // 重置所有计数器
-                Array.from(this.quickSearchKeywords).forEach(keyword => {
-                    this.quickSearchCounts.set(keyword, 0);
-                });
-
+                // 不再重置计数器，而是增量更新
+                // 这样可以避免计数器闪动
+                
                 // 检查当前日志缓冲区中的匹配
-                this.currentLogLines.forEach(line => {
-                    Array.from(this.quickSearchKeywords).forEach(keyword => {
-                        if (line.toLowerCase().includes(keyword.toLowerCase())) {
-                            const currentCount = this.quickSearchCounts.get(keyword) || 0;
-                            this.quickSearchCounts.set(keyword, currentCount + 1);
-                        }
+                // 注意：这里应该只计算新增的匹配，而不是重新计算全部
+                // 由于后端已经处理了计数，前端主要负责显示更新
+                
+                // 如果后端没有提供计数，才进行本地计算
+                if (this.quickSearchCounts.size === 0) {
+                    this.currentLogLines.forEach(line => {
+                        Array.from(this.quickSearchKeywords).forEach(keyword => {
+                            if (line.toLowerCase().includes(keyword.toLowerCase())) {
+                                const currentCount = this.quickSearchCounts.get(keyword) || 0;
+                                this.quickSearchCounts.set(keyword, currentCount + 1);
+                            }
+                        });
                     });
-                });
+                }
 
                 this.updateQuickSearchCounts();
             }

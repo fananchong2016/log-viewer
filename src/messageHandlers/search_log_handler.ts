@@ -7,12 +7,10 @@ export class SearchLogHandler implements IMessageHandler {
 		if (!this.provider.view) {
 			return;
 		}
-		const { query, regex, caseSensitive } = msg;
+		const { query } = msg;
 
 		// 保存搜索状态
 		this.provider.currentSearchQuery = query;
-		this.provider.currentSearchRegex = regex;
-		this.provider.currentSearchCaseSensitive = caseSensitive;
 
 		// 停止搜索刷新定时器
 		this.provider.stopSearchRefreshTimer();
@@ -24,7 +22,7 @@ export class SearchLogHandler implements IMessageHandler {
 		}
 
 		// 使用公共搜索方法
-		const matches = this.provider.performSearch(query, regex, caseSensitive);
+		const matches = this.provider.performSearch(query);
 		console.log(`searchLog: found ${matches.length} matches in ${this.provider.logBuffer.length} lines`);
 		this.provider.view.webview.postMessage({ type: 'searchResult', payload: matches });
 

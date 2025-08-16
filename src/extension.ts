@@ -8,15 +8,26 @@ import { MessageHandlerFactory } from './messageHandlers/message_handler_factory
 export function activate(context: vscode.ExtensionContext) {
 	console.log('Log Viewer extension is now active!');
 
+	// 确保全局存储目录存在
+	ensureGlobalStorageDirectory(context);
+
 	const config = vscode.workspace.getConfiguration('logViewer');
 	const clientLogPath = config.get('clientLogPath') as string;
-	const serverLogPattern = config.get('serverLogPath') as string;
+	const serverLogPath = config.get('serverLogPath') as string;
+
+	// 快速搜索关键词配置
+	const quickSearchKeywords = config.get('quickSearchKeywords') as string[] || ['all_succ', 'traceback'];
+
+	// 快速搜索标签颜色配置
+	const quickSearchColors = config.get('quickSearchColors') as string[] || ['#4CAF50', '#FF9800', '#E91E63', '#2196F3', '#9C27B0', '#FF5722'];
 
 	console.log('Client log path:', clientLogPath);
-	console.log('Server log pattern:', serverLogPattern);
+	console.log('Server log pattern:', serverLogPath);
+	console.log('Quick search keywords:', quickSearchKeywords);
+	console.log('Quick search colors:', quickSearchColors);
 
-	const clientProvider = new LogViewerProvider('client', clientLogPath, context);
-	const serverProvider = new LogViewerProvider('server', serverLogPattern, context);
+	const clientProvider = new LogViewerProvider('client', clientLogPath, context, quickSearchKeywords, quickSearchColors);
+	const serverProvider = new LogViewerProvider('server', serverLogPath, context, quickSearchKeywords, quickSearchColors);
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider('logViewerClientView', clientProvider),
@@ -29,6 +40,19 @@ export function activate(context: vscode.ExtensionContext) {
 			serverProvider.dispose();
 		}
 	});
+}
+
+// 确保全局存储目录存在
+function ensureGlobalStorageDirectory(context: vscode.ExtensionContext): void {
+	try {
+		const storagePath = context.globalStorageUri.fsPath;
+		if (!fs.existsSync(storagePath)) {
+			fs.mkdirSync(storagePath, { recursive: true });
+			console.log('Created global storage directory:', storagePath);
+		}
+	} catch (error) {
+		console.error('Failed to create global storage directory:', error);
+	}
 }
 
 // 刷新频率
@@ -48,24 +72,48 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 	private searchRefreshTimer: NodeJS.Timeout | null = null;
 	inSearchView: number = -1;
 	private currentSearchQuery: string = '';
-	private currentSearchRegex: boolean = false;
-	private currentSearchCaseSensitive: boolean = false;
 	private readonly maxHistory = 1000;
 	private readonly historyFile: string;
 	private readonly clearedStateFile: string;
 	private readonly stateKey: string;
 	private readonly messageHandlers: Map<string, IMessageHandler>;
 
+	// 快速搜索关键词配置
+	private quickSearchKeywords: string[];
 
-	constructor(type: 'client' | 'server', logPathOrPattern: string, context: vscode.ExtensionContext) {
+	// 快速搜索标签颜色配置
+	private quickSearchColors: string[];
+
+	// 快速搜索计数器 - 动态生成
+	private quickSearchCounts: Map<string, number> = new Map();
+
+
+	constructor(type: 'client' | 'server', logPathOrPattern: string, context: vscode.ExtensionContext, quickSearchKeywords: string[], quickSearchColors: string[]) {
 		this.type = type;
 		this.logPathOrPattern = logPathOrPattern;
 		this.context = context;
-		this.historyFile = path.join(context.globalStorageUri.fsPath, `${type}_searchHistory.json`);
-		this.clearedStateFile = path.join(context.globalStorageUri.fsPath, `${type}_cleared.json`);
+		this.quickSearchKeywords = quickSearchKeywords;
+		this.quickSearchColors = quickSearchColors;
+
+		// 确保存储目录存在
+		const storageDir = context.globalStorageUri.fsPath;
+		if (!fs.existsSync(storageDir)) {
+			fs.mkdirSync(storageDir, { recursive: true });
+		}
+
+		this.historyFile = path.join(storageDir, `${type}_searchHistory.json`);
+		this.clearedStateFile = path.join(storageDir, `${type}_cleared.json`);
 		this.stateKey = `${type}_panel_state`;
 		this.messageHandlers = MessageHandlerFactory.createHandlers(this);
+
+		// 初始化快速搜索计数器
+		Array.from(this.quickSearchKeywords).forEach(keyword => {
+			this.quickSearchCounts.set(keyword, 0);
+		});
+
+		// 预加载历史记录和状态
 		this.loadClearedState();
+		this.preloadHistory();
 
 		try {
 			console.log(`[${this.type}] 尝试匹配路径: ${this.logPathOrPattern}`);
@@ -139,8 +187,12 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 			this.flushLogToWebview(lastLines);
 		}
 
+		// 初始化快速搜索计数器
+		this.checkAndUpdateQuickSearchCounts();
+
 		this.sendHistory();
 		this.sendCachedPanelState();
+
 
 		webviewView.webview.onDidReceiveMessage(msg => {
 			this.handleWebviewMessage(msg);
@@ -160,8 +212,6 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 				// 延迟启动定时器，确保前端状态已恢复
 				setTimeout(() => {
 					this.currentSearchQuery = cached.searchText;
-					this.currentSearchRegex = false; // 默认值，实际应该从状态中恢复
-					this.currentSearchCaseSensitive = false; // 默认值，实际应该从状态中恢复
 					this.startSearchRefreshTimer();
 				}, 100);
 			}
@@ -217,17 +267,15 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 
-		const matches = this.performSearch(this.currentSearchQuery, this.currentSearchRegex, this.currentSearchCaseSensitive);
+		const matches = this.performSearch(this.currentSearchQuery);
 		this.view.webview.postMessage({ type: 'searchResult', payload: matches });
 	}
 
-	performSearch(query: string, regex: boolean, caseSensitive: boolean): any[] {
-		let flags = caseSensitive ? 'g' : 'gi';
-		let r: RegExp = regex
-			? new RegExp(query, flags)
-			: new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-
+	performSearch(query: string): any[] {
 		const matches = [];
+
+		// 预编译正则表达式，提高性能
+		const searchRegex = new RegExp(query, 'gi');
 
 		// 创建当前日志缓冲区的快照
 		const logSnapshot = [...this.logBuffer];
@@ -236,9 +284,9 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		const maxMatches = 100;
 		for (let i = logSnapshot.length - 1; i >= 0 && matches.length < maxMatches; i--) {
 			const line = logSnapshot[i];
-			// 为每一行创建新的正则表达式实例，避免 lastIndex 问题
-			const lineRegex = new RegExp(r.source, r.flags);
-			if (lineRegex.test(line)) {
+			// 使用预编译的正则表达式，性能更好
+			searchRegex.lastIndex = 0; // 重置lastIndex避免状态问题
+			if (searchRegex.test(line)) {
 				matches.push({
 					index: i,
 					content: line,
@@ -301,6 +349,10 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 
 		if (this.pendingLog.length > 0) {
 			const sorted = this.sortLogLines(this.pendingLog);
+
+			// 在添加到 logBuffer 之前，先检查新增日志中的匹配
+			this.updateQuickSearchCountsFromNewLogs(sorted);
+
 			this.logBuffer.push(...sorted);
 			this.pendingLog = [];
 		}
@@ -315,6 +367,7 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 			// 其他情况都正常发送日志更新
 			const lastLines = this.logBuffer.slice(-1000);
 			this.flushLogToWebview(lastLines);
+
 			this.updateTimer = null;
 		}, REFRESH_INTERVAL);
 	}
@@ -362,10 +415,37 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 
 	private loadHistory(): string[] {
 		try {
+			if (!fs.existsSync(this.historyFile)) {
+				console.log(`[${this.type}] 历史记录文件不存在: ${this.historyFile}`);
+				return [];
+			}
+
 			const raw = fs.readFileSync(this.historyFile, 'utf-8');
-			return JSON.parse(raw);
-		} catch {
+			const history = JSON.parse(raw);
+
+			if (Array.isArray(history)) {
+				console.log(`[${this.type}] 成功加载历史记录，共 ${history.length} 条`);
+				return history;
+			} else {
+				console.warn(`[${this.type}] 历史记录文件格式错误，重置为空数组`);
+				return [];
+			}
+		} catch (error) {
+			console.error(`[${this.type}] 加载历史记录失败:`, error);
+			console.error(`[${this.type}] 历史记录文件路径: ${this.historyFile}`);
 			return [];
+		}
+	}
+
+	private preloadHistory() {
+		try {
+			const history = this.loadHistory();
+			if (history.length > 0) {
+				this.currentSearchQuery = history[history.length - 1]; // 加载最后一个搜索文本
+				this.startSearchRefreshTimer(); // 启动搜索定时器
+			}
+		} catch (error) {
+			console.error(`Failed to preload history for ${this.type}:`, error);
 		}
 	}
 
@@ -388,5 +468,58 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 			clearInterval(this.searchRefreshTimer);
 			this.searchRefreshTimer = null;
 		}
+	}
+
+	// 更新快速搜索计数器和颜色配置
+	private updateQuickSearchCounts(): void {
+		if (!this.view) {
+			return;
+		}
+
+		// 构建动态的计数器数据
+		const payload: Record<string, number> = {};
+		Array.from(this.quickSearchKeywords).forEach(keyword => {
+			payload[keyword] = this.quickSearchCounts.get(keyword) || 0;
+		});
+
+		this.view.webview.postMessage({
+			type: 'updateQuickSearchCounts',
+			payload: payload,
+			colors: this.quickSearchColors // 同时发送颜色配置
+		});
+	}
+
+	// 检查并更新快速搜索计数
+	private checkAndUpdateQuickSearchCounts(): void {
+		// 重置所有计数器为 0
+		Array.from(this.quickSearchKeywords).forEach(keyword => {
+			this.quickSearchCounts.set(keyword, 0);
+		});
+
+		// 复用增量更新逻辑，传入整个 logBuffer
+		this.updateQuickSearchCountsFromNewLogs(this.logBuffer);
+	}
+
+	// 从新增日志中更新快速搜索计数（性能优化版本）
+	private updateQuickSearchCountsFromNewLogs(newLogs: string[]): void {
+		// 预编译正则表达式，提高性能
+		const regexMap = new Map<string, RegExp>();
+		Array.from(this.quickSearchKeywords).forEach(keyword => {
+			regexMap.set(keyword, new RegExp(keyword, 'i'));
+		});
+
+		// 只检查新增的日志，不区分大小写
+		newLogs.forEach(line => {
+			Array.from(this.quickSearchKeywords).forEach(keyword => {
+				const regex = regexMap.get(keyword)!;
+				if (regex.test(line)) {
+					const currentCount = this.quickSearchCounts.get(keyword) || 0;
+					this.quickSearchCounts.set(keyword, currentCount + 1);
+				}
+			});
+		});
+
+		// 向前端发送更新
+		this.updateQuickSearchCounts();
 	}
 }

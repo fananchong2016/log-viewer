@@ -2,7 +2,7 @@
   "name": "log-viewer",
   "displayName": "Log Viewer",
   "description": "A powerful log viewer extension for VS Code that provides real-time log monitoring with search, filtering, and syntax highlighting capabilities.",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "publisher": "fananchong",
   "repository": {
     "type": "git",
@@ -22,7 +22,6 @@
   "categories": [
     "Other"
   ],
-
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished"
@@ -65,13 +64,35 @@
       "properties": {
         "logViewer.clientLogPath": {
           "type": "string",
-          "default": "D:/workspace_prgramer/client/log/log.txt",  
+          "default": "D:/workspace_prgramer/client/log/log.txt",
           "description": "client log path。需要绝对路径。重启 vscode 生效"
         },
         "logViewer.serverLogPath": {
           "type": "string",
           "default": "D:/workspace_prgramer/server/server/bin/win/game[0-9].txt",
           "description": "server log path。需要绝对路径。重启 vscode 生效"
+        },
+        "logViewer.quickSearchKeywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "all_succ",
+            "traceback"
+          ],
+          "description": "快速搜索关键词列表。重启 vscode 生效"
+        },
+        "logViewer.quickSearchColors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "#4CAF50",
+            "#D32F2F"
+          ],
+          "description": "快速搜索标签颜色配置，支持16进制颜色代码。重启 vscode 生效"
         }
       }
     }

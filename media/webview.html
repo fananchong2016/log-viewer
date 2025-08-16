@@ -8,25 +8,32 @@
 
 <body style="height: 100%; margin: 0; display: flex; flex-direction: column; font-family: sans-serif;">
 
-    <div style="padding: 6px; background: #2d2d2d; display: flex; align-items: center; gap: 16px;">
+    <div style="padding: 3px; background: #2d2d2d; display: flex; align-items: center; gap: 12px;">
         <!-- 左半部分：搜索区域 -->
-        <div style="flex: 1; display: flex; align-items: center; background: #3a3a3a; border: 1px solid #555; border-radius: 6px; padding: 8px;">
-            <div style="color: #4CAF50; font-weight: bold; font-size: 12px; margin-right: 8px; white-space: nowrap;">🔍 搜索</div>
-            <input id="search" type="text" placeholder="Search logs..." style="flex: 1; padding: 6px; border: 1px solid #666; border-radius: 3px; background: #2a2a2a; color: white;" />
-            <label style="color: white; margin-left: 12px; font-size: 12px;">
-                <input type="checkbox" id="regex" /> 正则
-            </label>
-            <label style="color: white; margin-left: 8px; font-size: 12px;">
-                <input type="checkbox" id="caseSensitive" /> 区分大小写
-            </label>
-            <button id="clearLogBtn" style="margin-left: 12px; padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">清除日志</button>
-            <div id="status" style="color: white; margin-left: 8px; white-space: nowrap;"></div>
+        <div
+            style="flex: 1; display: flex; align-items: center; background: #3a3a3a; border: 1px solid #555; border-radius: 6px; padding: 4px;">
+            <div style="color: #4CAF50; font-weight: bold; font-size: 12px; margin-right: 8px; white-space: nowrap;">🔍
+                搜索</div>
+            <input id="search" type="text" placeholder="Search logs..."
+                style="flex: 1; padding: 4px 6px; border: 1px solid #666; border-radius: 3px; background: #2a2a2a; color: white;" />
+
+            <!-- 快速搜索标签 -->
+            <div id="quickSearchLabels" style="display: flex; align-items: center; gap: 8px; margin-left: 8px;">
+                <!-- 动态生成的快速搜索标签将在这里 -->
+            </div>
+
+            <button id="clearLogBtn"
+                style="margin-left: 8px; padding: 3px 6px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">清除日志</button>
+            <div id="status" style="color: white; margin-left: 6px; white-space: nowrap;"></div>
         </div>
 
         <!-- 右半部分：GM指令区域 -->
-        <div style="flex: 1; display: flex; align-items: center; background: #4a3a4a; border: 1px solid #665566; border-radius: 6px; padding: 8px;">
-            <div style="color: #FF9800; font-weight: bold; font-size: 12px; margin-right: 8px; white-space: nowrap;">⚡ GM指令</div>
-            <input id="gmCommand" type="text" placeholder="请输入GM指令..." style="flex: 1; padding: 6px; border: 1px solid #776677; border-radius: 3px; background: #3a2a3a; color: white;" />
+        <div
+            style="flex: 1; display: flex; align-items: center; background: #4a3a4a; border: 1px solid #665566; border-radius: 6px; padding: 4px;">
+            <div style="color: #FF9800; font-weight: bold; font-size: 12px; margin-right: 8px; white-space: nowrap;">⚡
+                GM指令</div>
+            <input id="gmCommand" type="text" placeholder="请输入GM指令..."
+                style="flex: 1; padding: 4px 6px; border: 1px solid #776677; border-radius: 3px; background: #3a2a3a; color: white;" />
         </div>
     </div>
 
@@ -60,11 +67,27 @@
                 this.historyIndex = -1;
                 this.searchTimeout = null;
 
+                // 快速搜索关键词 - 默认值，会被后端配置覆盖
+                this.quickSearchKeywords = ['all_succ', 'traceback'];
+
+                // 快速搜索标签颜色配置 - 可配置的颜色数组
+                this.quickSearchColors = ['#4CAF50', '#FF9800', '#E91E63', '#2196F3', '#9C27B0', '#FF5722'];
+
+                // 快速搜索计数器 - 动态生成
+                this.quickSearchCounts = new Map();
+                this.quickSearchLabels = new Map(); // 存储标签元素的引用
+                this._isInitialized = false; // 初始化状态标志
+
                 this.initElements();
                 this.initEventListeners();
                 this.hideMatchesDiv(); // 初始化时隐藏匹配栏
                 this.restoreState();
                 this.requestInitialState();
+
+                // 初始化快速搜索计数器 - 延迟执行，避免初始化时的重复调用
+                setTimeout(() => {
+                    this.checkAndUpdateQuickSearchCounts();
+                }, 100);
             }
 
             initElements() {
@@ -72,9 +95,10 @@
                 this.search = document.getElementById('search');
                 this.status = document.getElementById('status');
                 this.matchesDiv = document.getElementById('matches');
-                this.regexToggle = document.getElementById('regex');
-                this.caseToggle = document.getElementById('caseSensitive');
                 this.clearLogBtn = document.getElementById('clearLogBtn');
+
+                // 快速搜索标签容器
+                this.quickSearchLabelsContainer = document.getElementById('quickSearchLabels');
             }
 
             initEventListeners() {
@@ -86,18 +110,21 @@
 
                 // 搜索相关事件
                 this.search.addEventListener('keydown', this.handleSearchKeydown.bind(this));
-                this.regexToggle.addEventListener('change', this.sendSearchRequest.bind(this));
-                this.caseToggle.addEventListener('change', this.sendSearchRequest.bind(this));
 
                 // 匹配项点击事件委托
                 this.matchesDiv.addEventListener('click', this.handleMatchesDivClick.bind(this));
+
+                // 快速搜索标签点击事件委托
+                this.quickSearchLabelsContainer.addEventListener('click', this.handleQuickSearchClick.bind(this));
+
+                // 快速搜索标签点击事件将通过事件委托处理
 
                 // 定期保存状态
                 setInterval(() => this.persistState(), 1000);
             }
 
             handleMessage(event) {
-                const { type, lines, history, payload, targetLineIndex } = event.data;
+                const { type, lines, history, payload, targetLineIndex, colors } = event.data;
 
                 switch (type) {
                     case 'history':
@@ -112,12 +139,26 @@
                     case 'searchResult':
                         this.handleSearchResult(payload);
                         break;
+                    case 'updateQuickSearchCounts':
+                        this.handleUpdateQuickSearchCounts(payload, colors);
+                        break;
+                    case 'updateQuickSearchColors':
+                        this.updateQuickSearchColors(payload);
+                        break;
                 }
             }
 
             handleHistory(history) {
-                this.searchHistory = [...history];
-                this.historyIndex = this.searchHistory.length;
+                console.log('收到历史记录:', history);
+                if (Array.isArray(history)) {
+                    this.searchHistory = [...history];
+                    this.historyIndex = this.searchHistory.length;
+                    console.log('历史记录已加载，共', this.searchHistory.length, '条');
+                } else {
+                    console.warn('历史记录格式错误:', history);
+                    this.searchHistory = [];
+                    this.historyIndex = 0;
+                }
             }
 
             handleRestorePanelState(payload) {
@@ -135,6 +176,11 @@
 
             handleLog(lines, targetLineIndex) {
                 this.currentLogLines = lines || [];
+
+                // 更新快速搜索计数器 - 只在有实际日志数据时更新
+                if (lines && lines.length > 0) {
+                    this.checkAndUpdateQuickSearchCounts();
+                }
 
                 if (!this.search.value.trim()) {
                     this.renderLogLines();
@@ -189,6 +235,10 @@
             }
 
             updateSearchHistory(query) {
+                if (!query || query.trim() === '') return;
+
+                console.log('更新搜索历史:', query);
+
                 if (!this.searchHistory.includes(query)) {
                     this.searchHistory.push(query);
                     if (this.searchHistory.length > 100) {
@@ -198,6 +248,8 @@
                     this.searchHistory.splice(this.searchHistory.indexOf(query), 1);
                     this.searchHistory.push(query);
                 }
+
+                console.log('当前历史记录:', this.searchHistory);
                 this.vscode.postMessage({ type: 'updateHistory', payload: this.searchHistory });
                 this.historyIndex = this.searchHistory.length;
             }
@@ -228,7 +280,6 @@
             }
 
             createSearchFragments(matchPositions, query) {
-                const regex = this.createSearchRegex(query);
                 const fragments = [];
 
                 for (let i = 0; i < matchPositions.length; i++) {
@@ -239,11 +290,11 @@
                     const processedContent = this.processLogLine(content);
 
                     if (i === this.currentMatchIndex) {
-                        highlighted = this.escapeHTML(processedContent).replace(regex, match => {
+                        highlighted = this.escapeHTML(processedContent).replace(new RegExp(this.escapeRegExp(query), 'gi'), match => {
                             return `<mark id="active" style="background: yellow; color: black;">${this.escapeHTML(match)}</mark>`;
                         });
                     } else {
-                        highlighted = this.escapeHTML(processedContent).replace(regex, match => {
+                        highlighted = this.escapeHTML(processedContent).replace(new RegExp(this.escapeRegExp(query), 'gi'), match => {
                             return `<span style="background: rgba(255, 255, 0, 0.5); color: black;">${this.escapeHTML(match)}</span>`;
                         });
                     }
@@ -254,11 +305,9 @@
                 return fragments;
             }
 
-            createSearchRegex(query) {
-                const flags = this.caseToggle.checked ? 'g' : 'gi';
-                return this.regexToggle.checked
-                    ? new RegExp(query, flags)
-                    : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+            // 转义正则表达式特殊字符
+            escapeRegExp(string) {
+                return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             }
 
             updateCurrentMatchIndex(matchPositions) {
@@ -348,6 +397,120 @@
                 });
             }
 
+            handleQuickSearchClick(event) {
+                // 使用事件委托，找到被点击的快速搜索标签
+                const target = event.target.closest('.quick-search-label');
+                if (!target) return;
+
+                const searchText = target.dataset.search;
+                if (searchText) {
+                    console.log('快速搜索标签被点击:', searchText);
+                    this.search.value = searchText;
+                    this.search.focus();
+
+                    // 自动触发搜索
+                    this.sendSearchRequest();
+                    this.updateSearchHistory(searchText);
+                }
+            }
+
+            handleUpdateQuickSearchCounts(payload, colors) {
+                // 更新计数器 - 使用后端提供的数据，避免本地计算冲突
+                Object.keys(payload).forEach(keyword => {
+                    this.quickSearchCounts.set(keyword, payload[keyword]);
+                });
+
+                // 如果是第一次收到数据，从后端获取关键词配置并初始化标签
+                if (this.quickSearchLabels.size === 0) {
+                    // 从计数器数据中提取关键词列表
+                    this.quickSearchKeywords = Object.keys(payload);
+
+                    // 如果后端提供了颜色配置，使用后端的配置
+                    if (colors && Array.isArray(colors) && colors.length > 0) {
+                        this.quickSearchColors = [...colors];
+                        console.log('使用后端提供的颜色配置:', this.quickSearchColors);
+                    }
+
+                    this.initializeQuickSearchLabels();
+                    // 标记初始化完成
+                    this._isInitialized = true;
+                } else {
+                    // 如果标签已经存在，只更新计数器显示
+                    this.updateQuickSearchCounts();
+                }
+            }
+
+            // 更新快速搜索标签颜色配置
+            updateQuickSearchColors(newColors) {
+                if (Array.isArray(newColors) && newColors.length > 0) {
+                    this.quickSearchColors = [...newColors];
+                    console.log('快速搜索标签颜色配置已更新:', this.quickSearchColors);
+                }
+            }
+
+            initializeQuickSearchLabels() {
+                // 清空容器
+                this.quickSearchLabelsContainer.innerHTML = '';
+
+                // 为每个关键词创建标签
+                Array.from(this.quickSearchKeywords).forEach((keyword, index) => {
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'quick-search-label';
+                    labelDiv.dataset.search = keyword;
+                    labelDiv.title = `点击搜索: ${keyword}`; // 添加提示信息
+
+                    // 使用可配置的颜色数组
+                    const color = this.quickSearchColors[index % this.quickSearchColors.length];
+
+                    labelDiv.style.cssText = `
+                        color: ${color}; 
+                        font-size: 11px; 
+                        cursor: pointer; 
+                        padding: 2px 6px; 
+                        border-radius: 3px; 
+                        background: ${color}20; 
+                        border: 1px solid ${color}50;
+                        margin-right: 8px;
+                        transition: all 0.2s ease;
+                        user-select: none;
+                    `;
+
+                    // 添加悬停效果
+                    labelDiv.addEventListener('mouseenter', () => {
+                        labelDiv.style.background = `${color}40`;
+                        labelDiv.style.transform = 'scale(1.05)';
+                    });
+
+                    labelDiv.addEventListener('mouseleave', () => {
+                        labelDiv.style.background = `${color}20`;
+                        labelDiv.style.transform = 'scale(1)';
+                    });
+
+                    // 创建计数器span
+                    const countSpan = document.createElement('span');
+                    countSpan.id = `count_${keyword}`;
+                    countSpan.style.cssText = `
+                        background: ${color}; 
+                        color: white; 
+                        padding: 1px 4px; 
+                        border-radius: 2px; 
+                        font-size: 10px; 
+                        margin-left: 4px;
+                    `;
+                    countSpan.textContent = '0';
+
+                    // 设置标签内容
+                    labelDiv.innerHTML = `${keyword} `;
+                    labelDiv.appendChild(countSpan);
+
+                    // 存储引用
+                    this.quickSearchLabels.set(keyword, labelDiv);
+
+                    // 添加到容器
+                    this.quickSearchLabelsContainer.appendChild(labelDiv);
+                });
+            }
+
             handleMatchItemClick(index, matchPositionsData) {
                 // 保留此方法用于向后兼容，但现在使用事件委托
                 this.currentMatchIndex = index;
@@ -395,7 +558,7 @@
             highlightLogContent(query) {
                 if (!query || this.matchPositions.length === 0) return;
 
-                const regex = this.createSearchRegex(query);
+                const regex = new RegExp(this.escapeRegExp(query), 'gi');
                 this.log.innerHTML = '';
 
                 this.currentLogLines.forEach((line, index) => {
@@ -472,6 +635,9 @@
                 if (needScroll) {
                     this.log.scrollTop = this.log.scrollHeight;
                 }
+
+                // 移除这里的快速搜索计数器更新，避免重复调用
+                // 计数器更新已经在 handleLog 中处理
             }
 
             clearSearchHighlights() {
@@ -493,6 +659,13 @@
             clearLog() {
                 this.currentLogLines = [];
                 this.log.innerHTML = '';
+
+                // 重置所有快速搜索计数器
+                Array.from(this.quickSearchKeywords).forEach(keyword => {
+                    this.quickSearchCounts.set(keyword, 0);
+                });
+                this.updateQuickSearchCounts();
+
                 this.vscode.postMessage({ type: 'clearLog' });
             }
 
@@ -500,8 +673,6 @@
                 this.vscode.postMessage({
                     type: 'searchLog',
                     query: this.search.value.trim(),
-                    regex: this.regexToggle.checked,
-                    caseSensitive: this.caseToggle.checked
                 });
             }
 
@@ -557,6 +728,53 @@
             isAtBottom() {
                 const threshold = 1; // 允许1像素的误差
                 return Math.abs(this.log.scrollTop + this.log.clientHeight - this.log.scrollHeight) <= threshold;
+            }
+
+            // 更新快速搜索计数器
+            updateQuickSearchCounts() {
+                this.quickSearchCounts.forEach((count, keyword) => {
+                    const countSpan = document.getElementById(`count_${keyword}`);
+                    if (countSpan) {
+                        countSpan.textContent = count.toString();
+                    }
+                });
+            }
+
+            // 检查并更新快速搜索计数
+            checkAndUpdateQuickSearchCounts() {
+                // 在初始化完成前，不执行本地计算
+                if (!this._isInitialized) {
+                    return;
+                }
+
+                // 防抖：避免短时间内重复调用
+                if (this._quickSearchUpdateTimer) {
+                    clearTimeout(this._quickSearchUpdateTimer);
+                }
+
+                this._quickSearchUpdateTimer = setTimeout(() => {
+                    this._performQuickSearchUpdate();
+                }, 50);
+            }
+
+            // 实际执行快速搜索更新的方法
+            _performQuickSearchUpdate() {
+                // 重置所有计数器
+                Array.from(this.quickSearchKeywords).forEach(keyword => {
+                    this.quickSearchCounts.set(keyword, 0);
+                });
+
+                // 检查当前日志缓冲区中的匹配
+                this.currentLogLines.forEach(line => {
+                    Array.from(this.quickSearchKeywords).forEach(keyword => {
+                        if (line.toLowerCase().includes(keyword.toLowerCase())) {
+                            const currentCount = this.quickSearchCounts.get(keyword) || 0;
+                            this.quickSearchCounts.set(keyword, currentCount + 1);
+                        }
+                    });
+                });
+
+                this.updateQuickSearchCounts();
             }
         }
 

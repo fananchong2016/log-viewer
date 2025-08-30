@@ -188,7 +188,7 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		// 初始化快速搜索计数器
 		this.checkAndUpdateQuickSearchCounts();
 
-		this.sendHistory();
+		// 不再自动发送历史记录，等待前端请求
 		this.sendCachedPanelState();
 
 
@@ -203,6 +203,7 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		}
 		const cached = this.context.globalState.get(this.stateKey) as any;
 		if (cached) {
+			console.log(`[${this.type}] 恢复面板状态:`, cached);
 			this.view.webview.postMessage({ type: 'restorePanelState', payload: cached });
 
 			// 如果恢复的状态中有搜索文本，启动搜索定时器
@@ -211,7 +212,7 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 				setTimeout(() => {
 					this.currentSearchQuery = cached.searchText;
 					this.startSearchRefreshTimer();
-				}, 100);
+				}, 200);
 			}
 		}
 		// 发送 log
@@ -426,6 +427,7 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 
 			if (Array.isArray(history)) {
 				console.log(`[${this.type}] 成功加载历史记录，共 ${history.length} 条`);
+				console.log(`[${this.type}] 历史记录内容:`, history);
 				return history;
 			} else {
 				console.warn(`[${this.type}] 历史记录文件格式错误，重置为空数组`);

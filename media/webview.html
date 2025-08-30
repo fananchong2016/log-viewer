@@ -82,7 +82,12 @@
                 this.initEventListeners();
                 this.hideMatchesDiv(); // 初始化时隐藏匹配栏
                 this.restoreState();
-                this.requestInitialState();
+                
+                // 延迟请求初始状态和历史记录，确保前端完全初始化
+                setTimeout(() => {
+                    this.requestInitialState();
+                    this.requestHistory();
+                }, 100);
 
                 // 初始化快速搜索计数器 - 延迟执行，避免初始化时的重复调用
                 setTimeout(() => {
@@ -154,6 +159,15 @@
                     this.searchHistory = [...history];
                     this.historyIndex = this.searchHistory.length;
                     console.log('历史记录已加载，共', this.searchHistory.length, '条');
+                    
+                    // 如果有历史记录，恢复最后一个搜索文本到搜索框
+                    if (this.searchHistory.length > 0) {
+                        const lastSearchText = this.searchHistory[this.searchHistory.length - 1];
+                        if (lastSearchText && lastSearchText.trim()) {
+                            this.search.value = lastSearchText;
+                            console.log('恢复搜索文本:', lastSearchText);
+                        }
+                    }
                 } else {
                     console.warn('历史记录格式错误:', history);
                     this.searchHistory = [];
@@ -162,10 +176,22 @@
             }
 
             handleRestorePanelState(payload) {
+                console.log('恢复面板状态:', payload);
                 if (payload.searchText) {
                     this.search.value = payload.searchText;
                     this.currentMatchIndex = payload.matchIndex || -1;
-                    setTimeout(() => this.applySearch(this.search.value), 50);
+                    
+                    // 确保搜索文本也被添加到历史记录中
+                    if (payload.searchText.trim() && !this.searchHistory.includes(payload.searchText)) {
+                        this.searchHistory.push(payload.searchText);
+                        this.historyIndex = this.searchHistory.length;
+                        console.log('添加搜索文本到历史记录:', payload.searchText);
+                    }
+                    
+                    // 延迟执行搜索，确保状态已完全恢复
+                    setTimeout(() => {
+                        this.applySearch(this.search.value);
+                    }, 100);
                 } else {
                     this.hideMatchesDiv();
                 }
@@ -257,8 +283,13 @@
                 }
 
                 console.log('当前历史记录:', this.searchHistory);
-                this.vscode.postMessage({ type: 'updateHistory', payload: this.searchHistory });
                 this.historyIndex = this.searchHistory.length;
+                
+                // 立即保存历史记录到后端
+                this.vscode.postMessage({ type: 'updateHistory', payload: this.searchHistory });
+                
+                // 同时更新面板状态
+                this.persistState();
             }
 
             applySearch(query) {
@@ -699,6 +730,10 @@
 
             requestInitialState() {
                 this.vscode.postMessage({ type: 'getStateRequest' });
+            }
+
+            requestHistory() {
+                this.vscode.postMessage({ type: 'getHistoryRequest' });
             }
 
             persistState() {

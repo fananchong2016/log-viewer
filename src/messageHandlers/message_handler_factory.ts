@@ -6,6 +6,7 @@ import { GetStateRequestHandler } from './get_state_request_handler';
 import { GetHistoryRequestHandler } from './get_history_request_handler';
 import { SearchLogHandler } from './search_log_handler';
 import { GetLogByIndexHandler } from './get_log_by_index_handler';
+import { JumpToFileHandler } from './jump_to_file_handler';
 
 export class MessageHandlerFactory {
 	static createHandlers(provider: any): Map<string, IMessageHandler> {
@@ -18,6 +19,7 @@ export class MessageHandlerFactory {
 		handlers.set('getHistoryRequest', new GetHistoryRequestHandler(provider));
 		handlers.set('searchLog', new SearchLogHandler(provider));
 		handlers.set('getLogByIndex', new GetLogByIndexHandler(provider));
+		handlers.set('jumpToFile', new JumpToFileHandler(provider));
 		
 		return handlers;
 	}

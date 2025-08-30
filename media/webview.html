@@ -644,6 +644,12 @@
                 lineDiv.dataset.lineIndex = index;
                 lineDiv.style.whiteSpace = 'pre-wrap';
                 lineDiv.style.wordBreak = 'break-all';
+                
+                // 添加双击事件监听器
+                lineDiv.addEventListener('dblclick', (event) => {
+                    this.handleLogLineDoubleClick(event, index);
+                });
+                
                 return lineDiv;
             }
 
@@ -811,6 +817,221 @@
                 this._quickSearchUpdateTimer = setTimeout(() => {
                     this._performQuickSearchUpdate();
                 }, 200); // 增加防抖时间到200ms
+            }
+
+            // 处理日志行双击事件
+            handleLogLineDoubleClick(event, lineIndex) {
+                const line = this.currentLogLines[lineIndex];
+                if (!line) {
+                    console.error('双击事件: 未找到行内容, lineIndex:', lineIndex);
+                    return;
+                }
+                
+                // 获取点击位置相对于当前行的偏移
+                const lineDiv = event.currentTarget;
+                const rect = lineDiv.getBoundingClientRect();
+                const clickY = event.clientY - rect.top;
+                
+                // 计算点击的是该日志行中的第几行
+                const lineHeight = this.getLineHeight();
+                const clickedLineIndex = Math.max(0, Math.floor(clickY / lineHeight));
+                
+                // 调试信息
+                console.log('=== 双击事件信息 ===');
+                console.log('双击事件信息:', {
+                    lineIndex,
+                    clickY,
+                    lineHeight,
+                    clickedLineIndex,
+                    totalLines: lineDiv.textContent.split('\n').length,
+                    originalLine: line.substring(0, 200) + '...',
+                    displayText: lineDiv.textContent.substring(0, 200) + '...'
+                });
+                
+                // 解析日志中的文件名和行号，考虑多行情况
+                const fileInfo = this.parseLogLineForFileInfo(line, clickedLineIndex);
+                if (fileInfo) {
+                    console.log('=== 解析成功 ===');
+                    console.log('解析到的文件信息:', fileInfo);
+                    // 发送跳转请求到后端
+                    this.vscode.postMessage({
+                        type: 'jumpToFile',
+                        payload: fileInfo
+                    });
+                } else {
+                    console.log('=== 解析失败 ===');
+                    console.log('未找到文件信息');
+                    
+                    // 尝试在显示文本中查找文件信息
+                    console.log('尝试在显示文本中查找...');
+                    const displayFileInfo = this.parseLogLineForFileInfo(lineDiv.textContent, clickedLineIndex);
+                    if (displayFileInfo) {
+                        console.log('在显示文本中找到文件信息:', displayFileInfo);
+                        this.vscode.postMessage({
+                            type: 'jumpToFile',
+                            payload: displayFileInfo
+                        });
+                    } else {
+                        console.log('显示文本中也没有找到文件信息');
+                    }
+                }
+                console.log('==================');
+            }
+            
+            // 获取行高
+            getLineHeight() {
+                // 创建一个临时元素来测量行高
+                const tempDiv = document.createElement('div');
+                tempDiv.style.fontSize = window.getComputedStyle(this.log).fontSize;
+                tempDiv.style.fontFamily = window.getComputedStyle(this.log).fontFamily;
+                tempDiv.style.lineHeight = 'normal';
+                tempDiv.textContent = 'A';
+                document.body.appendChild(tempDiv);
+                const lineHeight = tempDiv.offsetHeight;
+                document.body.removeChild(tempDiv);
+                return lineHeight;
+            }
+            
+            // 解析日志行中的文件信息，支持多行情况
+            parseLogLineForFileInfo(line, clickedLineIndex = 0) {
+                // 处理转义字符，但保留原始字符串用于解析
+                const processedLine = this.processLogLine(line);
+                
+                console.log('=== 开始解析文件信息 ===');
+                console.log('原始行:', line);
+                console.log('点击行索引:', clickedLineIndex);
+                console.log('处理后的行:', processedLine);
+                
+                // 模式2: File "path/to/file.py", line 1277 (支持多行，包含可选的 in function_name) - 优先处理
+                const pattern2 = /File\s+"([^"]+\.py)",\s*line\s+(\d+)(?:\s+in\s+(\w+))?/;
+                
+                // 在原始行中查找所有匹配项
+                const matches = [];
+                let match;
+                const regex = new RegExp(pattern2, 'g');
+                
+                while ((match = regex.exec(line)) !== null) {
+                    const filePath = match[1];
+                    const lineNumber = parseInt(match[2]);
+                    const functionName = match[3] || null;
+                    
+                    if (!isNaN(lineNumber)) {
+                        // 计算这个匹配项在转义后的文本中对应的行数
+                        const beforeMatch = line.substring(0, match.index);
+                        const processedBefore = this.processLogLine(beforeMatch);
+                        const lineCount = (processedBefore.match(/\n/g) || []).length;
+                        
+                        matches.push({
+                            filePath,
+                            lineNumber,
+                            functionName,
+                            lineCount,
+                            matchIndex: match.index,
+                            originalIndex: match.index
+                        });
+                        
+                        console.log(`找到模式2匹配:`, {
+                            filePath,
+                            lineNumber,
+                            functionName,
+                            lineCount,
+                            matchIndex: match.index
+                        });
+                    }
+                }
+                
+                // 调试信息
+                console.log('文件信息匹配结果:', {
+                    clickedLineIndex,
+                    totalProcessedLines: processedLine.split('\n').length,
+                    matches: matches.map(m => ({
+                        filePath: m.filePath,
+                        lineNumber: m.lineNumber,
+                        functionName: m.functionName,
+                        lineCount: m.lineCount
+                    }))
+                });
+                
+                // 根据点击的行索引找到对应的文件信息
+                if (matches.length > 0) {
+                    // 找到点击行对应的文件信息
+                    for (let i = 0; i < matches.length; i++) {
+                        const match = matches[i];
+                        const nextMatch = matches[i + 1];
+                        
+                        // 计算这个匹配项对应的行范围
+                        const startLine = match.lineCount;
+                        const endLine = nextMatch ? nextMatch.lineCount : startLine + 1;
+                        
+                        console.log(`检查匹配项 ${i}:`, {
+                            filePath: match.filePath,
+                            lineNumber: match.lineNumber,
+                            functionName: match.functionName,
+                            startLine,
+                            endLine,
+                            clickedLineIndex,
+                            isInRange: clickedLineIndex >= startLine && clickedLineIndex < endLine
+                        });
+                        
+                        if (clickedLineIndex >= startLine && clickedLineIndex < endLine) {
+                            const fileName = match.filePath.split(/[\\\/]/).pop();
+                            console.log('找到匹配的文件信息:', {
+                                fileName,
+                                lineNumber: match.lineNumber,
+                                functionName: match.functionName,
+                                fullPath: match.filePath,
+                                clickedLineIndex,
+                                startLine,
+                                endLine
+                            });
+                            return { 
+                                fileName, 
+                                lineNumber: match.lineNumber, 
+                                fullPath: match.filePath,
+                                functionName: match.functionName
+                            };
+                        }
+                    }
+                    
+                    // 如果点击的行超出范围，返回最后一个匹配项
+                    const lastMatch = matches[matches.length - 1];
+                    const fileName = lastMatch.filePath.split(/[\\\/]/).pop();
+                    console.log('使用最后一个匹配项:', {
+                        fileName,
+                        lineNumber: lastMatch.lineNumber,
+                        functionName: lastMatch.functionName,
+                        fullPath: lastMatch.filePath
+                    });
+                    return { 
+                        fileName, 
+                        lineNumber: lastMatch.lineNumber, 
+                        fullPath: lastMatch.filePath,
+                        functionName: lastMatch.functionName
+                    };
+                }
+                
+                // 如果没有找到 File "path.py", line 123 格式的匹配，且点击的是第一行，才使用模式1
+                if (clickedLineIndex === 0) {
+                    // 模式1: ProcessBase.py65 - 文件名.py行号
+                    const pattern1 = /(\w+\.py\d+)/;
+                    const match1 = line.match(pattern1);
+                    if (match1) {
+                        const fullMatch = match1[1];
+                        const dotIndex = fullMatch.lastIndexOf('.');
+                        if (dotIndex > 0) {
+                            const fileName = fullMatch.substring(0, dotIndex + 3); // 包含.py
+                            const lineNumber = parseInt(fullMatch.substring(dotIndex + 3));
+                            if (!isNaN(lineNumber)) {
+                                console.log('使用模式1匹配:', { fileName, lineNumber });
+                                return { fileName, lineNumber };
+                            }
+                        }
+                    }
+                }
+                
+                console.log('未找到任何文件信息');
+                console.log('=== 解析结束 ===');
+                return null;
             }
 
             // 实际执行快速搜索更新的方法

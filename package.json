@@ -2,7 +2,7 @@
   "name": "log-viewer",
   "displayName": "Log Viewer",
   "description": "A powerful log viewer extension for VS Code that provides real-time log monitoring with search, filtering, and syntax highlighting capabilities.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "fananchong",
   "repository": {
     "type": "git",

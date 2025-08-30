@@ -338,7 +338,9 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		// 说明文件被清空了
 		if (newSize < oldSize) {
 			this.lastSizes[file] = newSize;
-			this.clearedOffsets[file] = 0;
+			this.clearedOffsets[file] = newSize;
+			this.logBuffer = [];
+			this.pendingLog = [];
 			return;
 		}
 

@@ -293,8 +293,24 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 				});
 			}
 		}
-		matches.reverse();
-		return matches;
+		
+		// 对搜索结果按时间排序（仅渲染层排序，不改变内部索引）
+		const sortedMatches = this.sortSearchResultsByTime(matches);
+		
+		return sortedMatches;
+	}
+
+	// 新增方法：专门用于渲染层的时间排序，不改变原始数据
+	private sortSearchResultsByTime(matches: any[]): any[] {
+		return matches
+			.map(match => {
+				const line = this.logBuffer[match.index];
+				const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{6})/);
+				const ts = timeMatch ? new Date(timeMatch[1].replace(',', '.')).getTime() : 0;
+				return { ...match, ts };
+			})
+			.sort((a, b) => a.ts - b.ts)
+			.map(entry => ({ index: entry.index, content: entry.content, contentHash: entry.contentHash }));
 	}
 
 
@@ -378,10 +394,11 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		if (!this.view) {
 			return;
 		}
+		// 在发送到前端之前，按时间排序日志（仅渲染层排序，不改变内部数据）
+		const sortedLines = this.sortLogLinesForDisplay(lines);
 		this.view.webview.postMessage({
 			type: 'log',
-			lines: lines,
-			targetLineIndex: undefined
+			lines: sortedLines
 		});
 	}
 
@@ -389,10 +406,16 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 		if (!this.view) {
 			return;
 		}
+		// 在发送到前端之前，按时间排序日志（仅渲染层排序，不改变内部数据）
+		const sortedLines = this.sortLogLinesForDisplay(lines);
+		// 重新计算目标行在排序后的位置
+		const originalTargetLine = lines[targetLineIndex];
+		const newTargetLineIndex = sortedLines.findIndex(line => line === originalTargetLine);
+		
 		this.view.webview.postMessage({
 			type: 'log',
-			lines: lines,
-			targetLineIndex: targetLineIndex
+			lines: sortedLines,
+			targetLineIndex: newTargetLineIndex >= 0 ? newTargetLineIndex : 0
 		});
 	}
 
@@ -404,6 +427,24 @@ class LogViewerProvider implements vscode.WebviewViewProvider {
 				return { line, ts };
 			})
 			.sort((a, b) => a.ts - b.ts)
+			.map(entry => entry.line);
+	}
+
+	// 新增方法：专门用于渲染层的时间排序，不改变原始数据
+	private sortLogLinesForDisplay(lines: string[]): string[] {
+		return lines
+			.map(line => {
+				const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{6})/);
+				const ts = match ? new Date(match[1].replace(',', '.')).getTime() : 0;
+				return { line, ts, originalIndex: lines.indexOf(line) };
+			})
+			.sort((a, b) => {
+				// 如果时间戳相同，保持原始顺序
+				if (a.ts === b.ts) {
+					return a.originalIndex - b.originalIndex;
+				}
+				return a.ts - b.ts;
+			})
 			.map(entry => entry.line);
 	}
 
